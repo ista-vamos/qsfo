@@ -1,0 +1,54 @@
+
+start: _prio0
+
+// logical AND and OR are called land and lor to avoid
+// conflicts with python keywords
+_prio0: exists | forall | _prio1
+exists: "exists" quantifier ["."|":"] _prio1
+forall: "forall" quantifier ["."|":"] _prio1
+quantifier: NAME | NAME bound
+bound: ["\in" | "in"] "[" INT "," INT "]"
+
+_prio1: land | lor
+?land: _prio1 "&&" _prio1 | _prio2
+?lor: _prio1 "||" _prio1 | _prio2
+
+_prio2: neg | _prio3
+neg: "!" _prio3
+
+_prio3:  compare | "(" _prio0 ")"
+
+?compare: is_lt | is_le | is_gt | is_ge
+is_lt: term "<" term
+is_le: term "<=" term
+is_gt: term ">" term
+is_ge: term ">=" term
+
+?term: timeterm | valueterm
+?valueterm: valuevar | signal | valueconst | valop
+?timeterm: timevar | timeconst | timeop
+valueconst: number
+timeconst: number
+
+?valop: valabs | valadd | valsub
+valabs: "|" valueterm "|"
+valsub: valueterm "-" valueterm
+valadd: valueterm "+" valueterm
+
+?timeop: timeadd | timesub
+timesub: timeterm "-" timeterm
+timeadd: timeterm "+" timeterm
+
+signal: NAME "(" timeterm ")"
+valuevar: NAME
+timevar: NAME
+
+
+number: INT | REAL
+
+%import common.SIGNED_INT -> INT
+%import common.SIGNED_FLOAT -> REAL
+%import common.CNAME -> NAME
+
+%import common.WS
+%ignore WS
