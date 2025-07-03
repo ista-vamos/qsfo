@@ -114,10 +114,10 @@ class AstTransformer(Transformer):
             return float(items[0])
         raise NotImplementedError(f"Unknown type of number: {items[0]}")
 
-   #def start(self, items):
-   #    assert len(items) == 1, items
-   #    assert isinstance(items[0], Formula), items[0]
-   #    return items[0]
+    def start(self, items):
+        assert len(items) == 1, items
+        assert isinstance(items[0], Formula), items[0]
+        return items[0]
 
 
 def process_ast(ast):

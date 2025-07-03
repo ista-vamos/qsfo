@@ -1,6 +1,7 @@
 class Formula:
 
     def __init__(self, children):
+        assert not self in children, "Have self in children"
         self._children = children
 
     def time_variables(self) -> list:
@@ -18,8 +19,55 @@ class Formula:
     def bound_variables(self):
         return [v for v in self.variables() if v not in self.free_variables()]
 
+    def root_str(self) -> str:
+        """__str__ without children (overridden by child classes)"""
+        return str(self)
+
     def children(self):
         return self._children
+
+    def visit_dfs(self, fn):
+        def _visit(node: Formula, lvl):
+            for c in node._children:
+                _visit(c, lvl + 1)
+                fn(c, lvl)
+
+        _visit(self, 0)
+        fn(self, 0)
+
+    def visit_bfs(self, fn):
+        """
+        :param fn: Function to run on all ast nodes. If this function returns false for a node, its children are not visited.
+        :return:
+        """
+
+        def _visit(node: Formula, lvl):
+            for c in node._children:
+                if fn(c, lvl):
+                    _visit(c, lvl + 1)
+
+        if fn(self, 0):
+            _visit(self, 0)
+
+    visit = visit_dfs
+
+    def pretty(self) -> str:
+        """
+        Return an indented __str__ of the formula
+        """
+        S = []
+
+        def to_str(ast, lvl):
+            if isinstance(ast, Term):
+                S.append(f'{" "*lvl}{ast}')
+                return False
+
+            S.append(f'{" "*lvl}{ast.root_str()}')
+            return True
+
+        self.visit_bfs(to_str)
+
+        return "\n".join(S)
 
     def substitute(self, S: dict):
         """
@@ -41,6 +89,9 @@ class Not(Formula):
         """The negated formula"""
         return self.children()[0]
 
+    def root_str(self):
+        return f"¬"
+
     def __str__(self):
         return f"¬({self.formula()})"
 
@@ -55,6 +106,9 @@ class And(Formula):
 
     def rhs(self):
         return self.children()[1]
+
+    def root_str(self):
+        return "⋀"
 
     def __str__(self):
         return f"({self.lhs()} ⋀ {self.rhs()})"
@@ -71,6 +125,9 @@ class Or(Formula):
     def rhs(self):
         return self.children()[1]
 
+    def root_str(self):
+        return "⋁"
+
     def __str__(self):
         return f"({self.lhs()} ⋁ {self.rhs()})"
 
@@ -86,6 +143,9 @@ class LessThan(Formula):
     def rhs(self):
         return self.children()[1]
 
+    def root_str(self):
+        return "<"
+
     def __str__(self):
         return f"({self.lhs()} < {self.rhs()})"
 
@@ -100,6 +160,9 @@ class LessOrEqual(Formula):
 
     def rhs(self):
         return self.children()[1]
+
+    def root_str(self):
+        return " ≤"
 
     def __str__(self):
         return f"{self.lhs()} ≤ {self.rhs()}"
@@ -151,6 +214,9 @@ class TimeVar(TimeTerm):
     def free_variables(self):
         return [self]
 
+    def __eq__(self, other):
+        return isinstance(other, (TimeVar, ValueVar)) and self.name() == other.name()
+
     def __str__(self):
         return f"{self.name()}ₜ"
 
@@ -162,6 +228,9 @@ class TimeOp(TimeTerm):
 
     def op(self):
         return self._op
+
+    def root_str(self):
+        return str(self.op())
 
     def __str__(self):
         op = self.op()
@@ -210,6 +279,9 @@ class ValueVar(ValueTerm):
     def free_variables(self):
         return [self]
 
+    def __eq__(self, other):
+        return isinstance(other, (TimeVar, ValueVar)) and self.name() == other.name()
+
     def __str__(self):
         return f"{self.name()}ᵥ"
 
@@ -225,6 +297,9 @@ class Signal(ValueTerm):
     def arg(self):
         return self.children()[0]
 
+    def root_str(self):
+        return str(self._name)
+
     def __str__(self):
         return f"{self.name()}({self.arg()})ᵥ"
 
@@ -236,6 +311,9 @@ class ValueOp(ValueTerm):
 
     def op(self):
         return self._op
+
+    def root_str(self):
+        return str(self.op())
 
     def __str__(self):
         op = self.op()
@@ -292,6 +370,9 @@ class Exists(Formula):
     def free_variables(self):
         qv = self.quantifier().var()
         return [v for v in self.formula().free_variables() if v != qv]
+
+    def root_str(self):
+        return f"∃{self.quantifier()}:"
 
     def __str__(self):
         f = self.formula()
