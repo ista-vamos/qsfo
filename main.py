@@ -2,6 +2,7 @@
 import sys
 
 from qsfo.parser import Parser
+from qsfo.polyhedra import Formula2Polyhedra
 
 if __name__ == "__main__":
     parser = Parser()
@@ -11,3 +12,6 @@ if __name__ == "__main__":
     print("------")
     print("Free variables: ", set(map(str, formula.free_variables())))
     print("Bound variables: ", set(map(str, formula.bound_variables())))
+
+    f2ph = Formula2Polyhedra()
+    f2ph.translate(formula)
