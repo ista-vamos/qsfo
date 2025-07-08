@@ -2,7 +2,7 @@
 import sys
 
 from qsfo.parser import Parser
-from qsfo.polyhedra import Formula2Polyhedra
+from qsfo.polytope import Formula2Polyhedra
 
 if __name__ == "__main__":
     parser = Parser()

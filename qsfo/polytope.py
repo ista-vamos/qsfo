@@ -1,0 +1,238 @@
+#from .formula import *
+from cdd import Matrix, matrix_from_array
+from itertools import product
+from sympy import symbols, Symbol, solve, simplify, reduce_inequalities, solve_rational_inequalities
+from sympy.core.numbers import Infinity, NegativeInfinity
+
+def _break_eqs(C: list) -> list:
+    for c in C:
+        if c.rel_op == "==":
+            yield c.lhs <= c.rhs
+            yield c.rhs <= c.lhs
+        else:
+            yield c
+
+def break_eqs(C):
+    # NOTE: return a list so that we can check for the emptiness
+    return list(_break_eqs(C))
+
+def to_le(term):
+    """
+    Convert the inequality to be less-or-equal
+    """
+    assert term.rel_op in ("<=", ">=", "<", ">"), term
+    if term.rel_op == ">=":
+        term = term.rhs <= term.lhs
+    elif term.rel_op == ">":
+        term = term.rhs < term.lhs
+
+    assert term.rel_op in ("<=", "<")
+    return term
+
+class Polytope:
+    """
+    Convex Polytope.
+
+    `constraints` is a list of linear sympy polynomials
+    """
+
+    def __init__(self, constraints: list, variables=None):
+        # matrix of inequalities
+        self._constraints = constraints
+        self._vars = variables or set(v for c in constraints for v in c.atoms(Symbol))
+
+    def vars(self):
+        return self._vars
+
+    def is_empty(self):
+        return not self._vars
+
+    def intersection(self, rhs: "Polytope"):
+        return Polytope(self._constraints + rhs._constraints)
+
+    def eliminate(self, var: Symbol):
+        if len(self.vars()) == 1:
+            raise RuntimeError("Eliminating the last variable will yield an empty Polytope")
+
+        # filter out inequalities that does not have `var`, these will be preserved
+        preserved, to_reduce = [], []
+        for c in self._constraints:
+            (to_reduce if c.has(var) else preserved).append(c)
+
+        # do the Fourier-Motzkin elimination
+        lefts, rights = [], []
+        solved_for_var = break_eqs(reduce_inequalities(to_reduce, var).args)#[term for ineq in break_eqs(to_reduce) for term in solve(ineq, var).args]
+        #print("S", solved_for_var)
+        if not solved_for_var:
+            # Inequalities have no solution
+            return Polytope([], set())
+
+        for term in solved_for_var:
+            # these do not contribute to the result
+            if term.has(Infinity) or term.has(NegativeInfinity):
+                continue
+            term = to_le(term)
+
+            if term.lhs.has(var):
+                assert not term.rhs.has(var), term
+                assert term.lhs == var, "Term is not just the symbol"
+                rights.append(term)
+            elif term.rhs.has(var):
+                assert term.rhs == var, "Term is not just the symbol"
+                lefts.append(term)
+
+        reduced = []
+        if lefts and rights:
+            for (t_lhs, t_rhs) in product(lefts, rights):
+                assert t_lhs.rhs == t_rhs.lhs == var, (var, t_lhs, t_rhs)
+
+                if t_lhs.rel_op == "<" or t_rhs.rel_op == "<":
+                    term = simplify(t_lhs.lhs < t_rhs.rhs)
+                else:
+                    assert t_lhs.rel_op == t_rhs.rel_op == "<=", (t_lhs, t_rhs)
+                    term = simplify(t_lhs.lhs <= t_rhs.rhs)
+                if term == True:
+                    continue
+                if term == False:
+                    return Polytope([])
+                reduced.append(term)
+
+        constraints = preserved + reduced
+        assert not any(c.has(var) for c in constraints), (var, constraints)
+        variables = self.vars().copy()
+        variables.remove(var)
+        return Polytope(constraints, variables)
+
+    def __str__(self):
+        return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
+        #return f'{{{", ".join(map(str, self._constraints))}}}'
+
+
+
+
+
+if __name__ == "__main__":
+    x, y, z = symbols('x y z')
+
+    P1 = Polytope([x - y <= 1, 2*x <= 1, 2*x >= 1, -x <= 3, x + z >= 3, z + y >= x])
+    print('P1:', P1)
+    P = P1.eliminate(x)
+    print('elim x', P)
+    print('elim z')
+    print(P.eliminate(z))
+    print('elim y')
+    print(P.eliminate(y))
+
+    print("----")
+    P = P1
+    print('P1:', P1)
+    P = P.eliminate(y)
+    print('elim y', P)
+    print('elim z')
+    print(P.eliminate(z))
+    print('elim x')
+    print(P.eliminate(x))
+    print("----")
+    P = P1
+    print('P1:', P1)
+    P = P.eliminate(z)
+    print('elim z', P)
+    print('elim y')
+    print(P.eliminate(y))
+    print('elim x')
+    print(P.eliminate(x))
+    print("----")
+
+
+    #P = Polytope([x > 1, x < 0, x + y > 0, y > 2])
+    #print(P)
+    #print(P.eliminate(x))
+
+
+#
+# class PolyhedraSet:
+#     def __init__(self, *args):
+#         self._phs = list(args)
+#
+#     def __str__(self):
+#         return f'{{{", ".join(map(str, self._phs))}}}'
+#
+# class FormulaPolyhedron:
+#     """
+#     A pair of a PolyhedraSet and a variable which represents the value of a variable.
+#     """
+#
+#     def __init__(self, var: Variable, phs: PolyhedraSet):
+#         self._var = var
+#         self._phs = phs
+#
+#     def __str__(self):
+#         return f'{self._var} ==> {self._phs}'
+#
+#
+# class Formula2Polyhedra:
+#     def __init__(self):
+#         self._vars_num = 0
+#         self._var_to_idx = {}
+#
+#     def _new_var(self, name=None):
+#         idx = self._vars_num
+#         v = Variable(idx)
+#         if name:
+#             self._var_to_idx[name] = idx
+#
+#         self._vars_num += 1
+#         return v
+#
+#     def _get_var(self, name):
+#         idx = self._var_to_idx.get(name)
+#         if idx is None:
+#             v = self._new_var(name)
+#         else:
+#             return Variable(idx)
+#         return v
+#
+#     def _create_ph(self, bounds, *args):
+#         cs = Constraint_System()
+#         for a in args:
+#             cs.insert(a)
+#         return Polyhedron(bounds, C_Polyhedron(cs))
+#
+#     def _term(self, formula, bounds):
+#         resvar = self._new_var()
+#         if isinstance(formula, (TimeVar, ValueVar)):
+#             return FormulaPolyhedron(
+#                 resvar,
+#                 PolyhedraSet(
+#                     self._create_ph(
+#                         (None, None), resvar == self._get_var(formula.name())
+#                     )
+#                 ),
+#             )
+#         if isinstance(formula, (TimeConstant, ValueConstant)):
+#             print("FIXME: add bounds on the value from quantifiers")
+#             return FormulaPolyhedron(
+#                 resvar,
+#                 PolyhedraSet(
+#                     self._create_ph(
+#                         (None, None), resvar == formula.value()
+#                     )
+#                 ),
+#             )
+#
+#
+#     def term(self, formula):
+#         return self._term(formula, (None, None))
+#
+#     def translate(self, formula):
+#         def _translate(formula, lvl):
+#             if isinstance(formula, Term):
+#                 print(formula)
+#                 r = self.term(formula)
+#                 print(r)
+#                 print("----")
+#
+#         # This is for testing now, in the real version
+#         # we do a manual top-down recursion
+#         formula.visit_dfs(_translate)
+#         print(self._var_to_idx)
