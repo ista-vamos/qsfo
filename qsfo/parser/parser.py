@@ -94,7 +94,7 @@ class AstTransformer(Transformer):
         # gather all variables in the sub-formula with the quantified name
         vars = [v for v in items[1].free_variables() if var == v.name()]
         if not vars:
-            raise RuntimeError(f'Binding non-existing variable: {items[1]}, free variables: {items[1].free_variables()}')
+            raise RuntimeError(f'Binding non-existing variable `{var}` in formula `{items[1]}` with free variables: {",".join(map(str, items[1].free_variables()))}')
         if any(var == v for v in items[1].bound_variables()):
             raise NotImplementedError(f'A variable shadows another variable, this is not supported atm: {items[1]}, bound variables: {items[1].bound_variables()}')
 
