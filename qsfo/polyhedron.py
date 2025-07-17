@@ -1,8 +1,10 @@
-#from .formula import *
-from cdd import Matrix, matrix_from_array
 from itertools import product
-from sympy import symbols, Symbol, solve, simplify, reduce_inequalities, solve_rational_inequalities
+
+from sympy import symbols, Symbol, simplify, reduce_inequalities
 from sympy.core.numbers import Infinity, NegativeInfinity
+
+Var = Symbol
+
 
 def _break_eqs(C: list) -> list:
     for c in C:
@@ -12,9 +14,11 @@ def _break_eqs(C: list) -> list:
         else:
             yield c
 
+
 def break_eqs(C):
     # NOTE: return a list so that we can check for the emptiness
     return list(_break_eqs(C))
+
 
 def to_le(term):
     """
@@ -29,6 +33,7 @@ def to_le(term):
     assert term.rel_op in ("<=", "<")
     return term
 
+
 class Polyhedron:
     """
     N-dimensional Polyhedron (bounded polytope).
@@ -39,7 +44,7 @@ class Polyhedron:
     def __init__(self, constraints: list, variables=None):
         # matrix of inequalities
         self._constraints = constraints
-        self._vars = variables or set(v for c in constraints for v in c.atoms(Symbol))
+        self._vars = variables or set(v for c in constraints for v in c.atoms(Var))
 
     def vars(self):
         return self._vars
@@ -50,9 +55,11 @@ class Polyhedron:
     def intersection(self, rhs: "Polyhedron"):
         return Polyhedron(self._constraints + rhs._constraints)
 
-    def eliminate(self, var: Symbol):
+    def eliminate(self, var: Var):
         if len(self.vars()) == 1:
-            raise RuntimeError("Eliminating the last variable will yield an empty Polyhedron")
+            raise RuntimeError(
+                "Eliminating the last variable will yield an empty Polyhedron"
+            )
 
         # filter out inequalities that does not have `var`, these will be preserved
         preserved, to_reduce = [], []
@@ -61,8 +68,10 @@ class Polyhedron:
 
         # do the Fourier-Motzkin elimination
         lefts, rights = [], []
-        solved_for_var = break_eqs(reduce_inequalities(to_reduce, var).args)#[term for ineq in break_eqs(to_reduce) for term in solve(ineq, var).args]
-        #print("S", solved_for_var)
+        solved_for_var = break_eqs(
+            reduce_inequalities(to_reduce, var).args
+        )  # [term for ineq in break_eqs(to_reduce) for term in solve(ineq, var).args]
+        # print("S", solved_for_var)
         if not solved_for_var:
             # Inequalities have no solution
             return Polyhedron([], set())
@@ -83,7 +92,7 @@ class Polyhedron:
 
         reduced = []
         if lefts and rights:
-            for (t_lhs, t_rhs) in product(lefts, rights):
+            for t_lhs, t_rhs in product(lefts, rights):
                 assert t_lhs.rhs == t_rhs.lhs == var, (var, t_lhs, t_rhs)
 
                 if t_lhs.rel_op == "<" or t_rhs.rel_op == "<":
@@ -105,46 +114,43 @@ class Polyhedron:
 
     def __str__(self):
         return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
-        #return f'{{{", ".join(map(str, self._constraints))}}}'
-
-
-
+        # return f'{{{", ".join(map(str, self._constraints))}}}'
 
 
 if __name__ == "__main__":
-    x, y, z = symbols('x y z')
+    x, y, z = symbols("x y z")
 
-    P1 = Polyhedron([x - y <= 1, 2*x <= 1, 2*x >= 1, -x <= 3, x + z >= 3, z + y >= x])
-    print('P1:', P1)
+    P1 = Polyhedron(
+        [x - y <= 1, 2 * x <= 1, 2 * x >= 1, -x <= 3, x + z >= 3, z + y >= x]
+    )
+    print("P1:", P1)
     P = P1.eliminate(x)
-    print('elim x', P)
-    print('elim z')
+    print("elim x", P)
+    print("elim z")
     print(P.eliminate(z))
-    print('elim y')
+    print("elim y")
     print(P.eliminate(y))
 
     print("----")
     P = P1
-    print('P1:', P1)
+    print("P1:", P1)
     P = P.eliminate(y)
-    print('elim y', P)
-    print('elim z')
+    print("elim y", P)
+    print("elim z")
     print(P.eliminate(z))
-    print('elim x')
+    print("elim x")
     print(P.eliminate(x))
     print("----")
     P = P1
-    print('P1:', P1)
+    print("P1:", P1)
     P = P.eliminate(z)
-    print('elim z', P)
-    print('elim y')
+    print("elim z", P)
+    print("elim y")
     print(P.eliminate(y))
-    print('elim x')
+    print("elim x")
     print(P.eliminate(x))
     print("----")
     print("----")
     P = Polyhedron([x + y <= 1, x - y <= 0, x >= 0, 0 <= y, y <= 1])
     print(P)
     print(P.eliminate(y))
-
-

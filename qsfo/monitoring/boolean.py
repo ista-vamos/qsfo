@@ -1,22 +1,13 @@
+from qsfo.polyhedron import Var, Polyhedron
 from qsfo.formula import *
 
-class FormulaPolyhedron:
-    """
-    A pair of a PolyhedronSet and a variable which represents the value of a variable.
-    """
 
-    def __init__(self, var: Variable, phs: PolyhedronSet):
-        self._var = var
-        self._phs = phs
-
-    def __str__(self):
-        return f'{self._var} ==> {self._phs}'
-
-
-class PolyhedronSet:
+class PolyhedronList:
     """
     A set of polyhedra describing a part of the n-dimensional space.
     The interpretation is the _union_ of all polyhedra.
+
+    TODO: keep it sorted to optimize the operations
     """
     def __init__(self, *args):
         self._phs = list(args)
@@ -28,40 +19,48 @@ class PolyhedronSet:
         return f'{{{", ".join(map(str, self._phs))}}}'
 
 
-class Formula2Polyhedron:
+class FormulaPolyhedra:
+    """
+    A pair of a PolyhedronSet and a variable which represents the value of the formula.
+    """
+
+    def __init__(self, var: Var, phs: PolyhedronList):
+        self._var = var
+        self._phs = phs
+
+    def __str__(self):
+        return f'{self._var} ==> {self._phs}'
+
+
+
+class Formula2Polyhedra:
     def __init__(self):
-        self._vars_num = 0
-        self._var_to_idx = {}
+        # cache for variables
+        self._vars = {}
+        # numbering for unnamed variables
+        self.__annon_vars_idx = 0
 
     def _new_var(self, name=None):
-        idx = self._vars_num
-        v = Variable(idx)
         if name:
-            self._var_to_idx[name] = idx
+            return self._vars.get(name, Var(name))
 
-        self._vars_num += 1
-        return v
+        self.__annon_vars_idx += 1
+        idx = self.__annon_vars_idx
+        return Var(f'v_{idx}')
 
     def _get_var(self, name):
-        idx = self._var_to_idx.get(name)
-        if idx is None:
-            v = self._new_var(name)
-        else:
-            return Variable(idx)
-        return v
+        return self._vars.get(name, self._new_var(name))
 
     def _create_ph(self, bounds, *args):
-        cs = Constraint_System()
-        for a in args:
-            cs.insert(a)
-        return Polyhedron(bounds, C_Polyhedron(cs))
+        # FIXME: not using bounds here
+        return Polyhedron(*args)
 
     def _term(self, formula, bounds):
         resvar = self._new_var()
         if isinstance(formula, (TimeVar, ValueVar)):
-            return FormulaPolyhedron(
+            return FormulaPolyhedra(
                 resvar,
-                PolyhedronSet(
+                PolyhedronList(
                     self._create_ph(
                         (None, None), resvar == self._get_var(formula.name())
                     )
@@ -69,9 +68,9 @@ class Formula2Polyhedron:
             )
         if isinstance(formula, (TimeConstant, ValueConstant)):
             print("FIXME: add bounds on the value from quantifiers")
-            return FormulaPolyhedron(
+            return FormulaPolyhedra(
                 resvar,
-                PolyhedronSet(
+                PolyhedronList(
                     self._create_ph(
                         (None, None), resvar == formula.value()
                     )
@@ -83,14 +82,13 @@ class Formula2Polyhedron:
         return self._term(formula, (None, None))
 
     def translate(self, formula):
-        def _translate(formula, lvl):
-            if isinstance(formula, Term):
-                print(formula)
-                r = self.term(formula)
+        def _translate(f, lvl):
+            if isinstance(f, Term):
+                print(f)
+                r = self.term(f)
                 print(r)
                 print("----")
 
         # This is for testing now, in the real version
         # we do a manual top-down recursion
         formula.visit_dfs(_translate)
-        print(self._var_to_idx)
