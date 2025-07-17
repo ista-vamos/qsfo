@@ -29,11 +29,11 @@ def to_le(term):
     assert term.rel_op in ("<=", "<")
     return term
 
-class Polytope:
+class Polyhedron:
     """
-    Convex Polytope.
+    N-dimensional Polyhedron (bounded polytope).
 
-    `constraints` is a list of linear sympy polynomials
+    `constraints` is a list of linear sympy polynomials.
     """
 
     def __init__(self, constraints: list, variables=None):
@@ -47,12 +47,12 @@ class Polytope:
     def is_empty(self):
         return not self._vars
 
-    def intersection(self, rhs: "Polytope"):
-        return Polytope(self._constraints + rhs._constraints)
+    def intersection(self, rhs: "Polyhedron"):
+        return Polyhedron(self._constraints + rhs._constraints)
 
     def eliminate(self, var: Symbol):
         if len(self.vars()) == 1:
-            raise RuntimeError("Eliminating the last variable will yield an empty Polytope")
+            raise RuntimeError("Eliminating the last variable will yield an empty Polyhedron")
 
         # filter out inequalities that does not have `var`, these will be preserved
         preserved, to_reduce = [], []
@@ -65,7 +65,7 @@ class Polytope:
         #print("S", solved_for_var)
         if not solved_for_var:
             # Inequalities have no solution
-            return Polytope([], set())
+            return Polyhedron([], set())
 
         for term in solved_for_var:
             # these do not contribute to the result
@@ -94,14 +94,14 @@ class Polytope:
                 if term == True:
                     continue
                 if term == False:
-                    return Polytope([])
+                    return Polyhedron([])
                 reduced.append(term)
 
         constraints = preserved + reduced
         assert not any(c.has(var) for c in constraints), (var, constraints)
         variables = self.vars().copy()
         variables.remove(var)
-        return Polytope(constraints, variables)
+        return Polyhedron(constraints, variables)
 
     def __str__(self):
         return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
@@ -114,7 +114,7 @@ class Polytope:
 if __name__ == "__main__":
     x, y, z = symbols('x y z')
 
-    P1 = Polytope([x - y <= 1, 2*x <= 1, 2*x >= 1, -x <= 3, x + z >= 3, z + y >= x])
+    P1 = Polyhedron([x - y <= 1, 2*x <= 1, 2*x >= 1, -x <= 3, x + z >= 3, z + y >= x])
     print('P1:', P1)
     P = P1.eliminate(x)
     print('elim x', P)
@@ -142,97 +142,9 @@ if __name__ == "__main__":
     print('elim x')
     print(P.eliminate(x))
     print("----")
+    print("----")
+    P = Polyhedron([x + y <= 1, x - y <= 0, x >= 0, 0 <= y, y <= 1])
+    print(P)
+    print(P.eliminate(y))
 
 
-    #P = Polytope([x > 1, x < 0, x + y > 0, y > 2])
-    #print(P)
-    #print(P.eliminate(x))
-
-
-#
-# class PolyhedraSet:
-#     def __init__(self, *args):
-#         self._phs = list(args)
-#
-#     def __str__(self):
-#         return f'{{{", ".join(map(str, self._phs))}}}'
-#
-# class FormulaPolyhedron:
-#     """
-#     A pair of a PolyhedraSet and a variable which represents the value of a variable.
-#     """
-#
-#     def __init__(self, var: Variable, phs: PolyhedraSet):
-#         self._var = var
-#         self._phs = phs
-#
-#     def __str__(self):
-#         return f'{self._var} ==> {self._phs}'
-#
-#
-# class Formula2Polyhedra:
-#     def __init__(self):
-#         self._vars_num = 0
-#         self._var_to_idx = {}
-#
-#     def _new_var(self, name=None):
-#         idx = self._vars_num
-#         v = Variable(idx)
-#         if name:
-#             self._var_to_idx[name] = idx
-#
-#         self._vars_num += 1
-#         return v
-#
-#     def _get_var(self, name):
-#         idx = self._var_to_idx.get(name)
-#         if idx is None:
-#             v = self._new_var(name)
-#         else:
-#             return Variable(idx)
-#         return v
-#
-#     def _create_ph(self, bounds, *args):
-#         cs = Constraint_System()
-#         for a in args:
-#             cs.insert(a)
-#         return Polyhedron(bounds, C_Polyhedron(cs))
-#
-#     def _term(self, formula, bounds):
-#         resvar = self._new_var()
-#         if isinstance(formula, (TimeVar, ValueVar)):
-#             return FormulaPolyhedron(
-#                 resvar,
-#                 PolyhedraSet(
-#                     self._create_ph(
-#                         (None, None), resvar == self._get_var(formula.name())
-#                     )
-#                 ),
-#             )
-#         if isinstance(formula, (TimeConstant, ValueConstant)):
-#             print("FIXME: add bounds on the value from quantifiers")
-#             return FormulaPolyhedron(
-#                 resvar,
-#                 PolyhedraSet(
-#                     self._create_ph(
-#                         (None, None), resvar == formula.value()
-#                     )
-#                 ),
-#             )
-#
-#
-#     def term(self, formula):
-#         return self._term(formula, (None, None))
-#
-#     def translate(self, formula):
-#         def _translate(formula, lvl):
-#             if isinstance(formula, Term):
-#                 print(formula)
-#                 r = self.term(formula)
-#                 print(r)
-#                 print("----")
-#
-#         # This is for testing now, in the real version
-#         # we do a manual top-down recursion
-#         formula.visit_dfs(_translate)
-#         print(self._var_to_idx)

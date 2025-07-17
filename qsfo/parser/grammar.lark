@@ -19,10 +19,10 @@ neg: "!" _prio3
 _prio3:  compare | "(" _prio0 ")"
 
 ?compare: is_lt | is_le | is_gt | is_ge
-is_lt: term "<" term
-is_le: term "<=" term
-is_gt: term ">" term
-is_ge: term ">=" term
+is_lt: term "<" term  | term "\lt" term
+is_le: term "<=" term | term "\le" term
+is_gt: term ">" term  | term "\gt" term
+is_ge: term ">=" term | term "\ge" term
 
 ?term: timeterm | valueterm
 ?valueterm: valuevar | signal | valueconst | valop
