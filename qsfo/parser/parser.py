@@ -15,7 +15,7 @@ class AstTransformer(Transformer):
     def timeconst(self, items):
         assert len(items) == 1
         assert isinstance(items[0], (int, float)), items[0]
-        return TimeConstant(items[0])
+        return Constant(items[0])
 
     def valuevar(self, items):
         return ValueVar(items[0])
@@ -23,7 +23,7 @@ class AstTransformer(Transformer):
     def valueconst(self, items):
         assert len(items) == 1
         assert isinstance(items[0], (int, float)), items[0]
-        return ValueConstant(items[0])
+        return Constant(items[0])
 
     def signal(self, items):
         assert len(items) == 2
@@ -50,14 +50,14 @@ class AstTransformer(Transformer):
 
     def is_le(self, items):
         assert len(items) == 2
-        assert isinstance(items[0], (ValueTerm, TimeTerm)), items
-        assert isinstance(items[1], (ValueTerm, TimeTerm)), items
+        assert isinstance(items[0], (ValueTerm, TimeTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, TimeTerm, Constant)), items
         return LessOrEqual(items[0], items[1])
 
     def is_lt(self, items):
         assert len(items) == 2
-        assert isinstance(items[0], (ValueTerm, TimeTerm)), items
-        assert isinstance(items[1], (ValueTerm, TimeTerm)), items
+        assert isinstance(items[0], (ValueTerm, TimeTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, TimeTerm, Constant)), items
         return LessThan(items[0], items[1])
 
     def bound(self, items):

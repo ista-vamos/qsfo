@@ -94,7 +94,7 @@ class Formula2Polyhedra:
                     (None, None), sub_vars <= 0, 0 <= sub_vars
                 )
             )
-        if isinstance(formula, (TimeConstant, ValueConstant)):
+        if isinstance(formula, Constant):
             print("FIXME: add bounds on the value from quantifiers")
             sub_vars = resvar - formula.value()
             return FormulaPolyhedraList(

@@ -172,20 +172,10 @@ class Term(Formula):
     pass
 
 
-class TimeTerm(Term):
-    pass
-
-
-var_cnt: int = 0
-
-
-class TimeConstant(TimeTerm):
+class Constant(Term):
     def __init__(self, c):
         super().__init__([])
         self._value = c
-
-    def value(self):
-        return self._value
 
     def time_variables(self) -> list:
         return []
@@ -196,8 +186,18 @@ class TimeConstant(TimeTerm):
     def free_variables(self):
         return []
 
+    def value(self):
+        return self._value
+
     def __str__(self):
-        return f"{self.value()}ₜ"
+        return str(self.value())
+
+
+class TimeTerm(Term):
+    pass
+
+
+var_cnt: int = 0
 
 
 class TimeVar(TimeTerm):
@@ -242,27 +242,6 @@ class TimeOp(TimeTerm):
 
 class ValueTerm(Term):
     pass
-
-
-class ValueConstant(ValueTerm):
-    def __init__(self, c):
-        super().__init__([])
-        self._value = c
-
-    def time_variables(self) -> list:
-        return []
-
-    def value_variables(self) -> list:
-        return []
-
-    def free_variables(self):
-        return []
-
-    def value(self):
-        return self._value
-
-    def __str__(self):
-        return f"{self.value()}ᵥ"
 
 
 class ValueVar(ValueTerm):
