@@ -1,12 +1,18 @@
 from ..polyhedron import TimedPolyhedron, Var
 from sympy import Rational
 
-class Trace(list):
+class PiecewiseTrace(list):
     def __init__(self, timevar, sigvar, iterable):
         super().__init__(iterable)
 
         self._timevar = timevar
         self._sigvar = sigvar
+
+    def timevar(self):
+        return self._timevar
+
+    def sigvar(self):
+        return self._sigvar
 
 
 class SignalsTrace(list):
@@ -55,7 +61,7 @@ class SignalsTrace(list):
         resvar = Var(varname)
         N = len(self)
 
-        sig = []
+        sig = PiecewiseTrace(timevar, resvar, [])
         last = self[0]
         for i in range(1, N):
             cur = self[i]

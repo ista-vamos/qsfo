@@ -25,7 +25,6 @@ if __name__ == "__main__":
         print(f"For {v}:")
         print([str(p) for p in trace.piecewise_linear_signal(v)])
     print("--- ---")
-    assert False
 
     f2ph = Formula2Polyhedra()
     f2ph.translate(formula)
