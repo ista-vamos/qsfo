@@ -1,6 +1,6 @@
 from itertools import product
 
-from sympy import symbols, Symbol, simplify, reduce_inequalities
+from sympy import symbols, Symbol, simplify, reduce_inequalities, And
 from sympy.core.numbers import Infinity, NegativeInfinity
 
 Var = Symbol
@@ -34,6 +34,20 @@ def to_le(term):
     return term
 
 
+def simplify_constraints(C: list):
+    expr = simplify(And(*C))
+    elems = expr.args
+    if expr is False:
+        return []
+    assert expr is not True, f"And'ed constraints simplified to True: {C}"
+
+    if isinstance(expr, And):
+        return [c for e in expr.args for c in break_eqs((e,))]
+    else:
+        # simplified to a single expression
+        return [elems]
+
+
 class Polyhedron:
     """
     N-dimensional Polyhedron (bounded polytope).
@@ -53,7 +67,13 @@ class Polyhedron:
         return not self._vars
 
     def intersection(self, rhs: "Polyhedron"):
-        return Polyhedron(self._constraints + rhs._constraints)
+        print("FIXME: simplify and return empty/universal if possible")
+        # C = simplify_constraints(self._constraints + rhs._constraints)
+        C = self._constraints + rhs._constraints
+        if not C:
+            # unsat constraints
+            return Polyhedron([])
+        return Polyhedron(C, variables=self.vars().union(rhs.vars()))
 
     def eliminate(self, var: Var):
         if len(self.vars()) == 1:
@@ -112,16 +132,36 @@ class Polyhedron:
         variables.remove(var)
         return Polyhedron(constraints, variables)
 
+    def constraints(self):
+        return self._constraints
+
     def __str__(self):
         return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
         # return f'{{{", ".join(map(str, self._constraints))}}}'
+
+
+class TimedPolyhedron(Polyhedron):
+    """
+    Polyhedron with explicit bounds on the time variable.
+    """
+
+    def __init__(self, timevar: Var, bounds: tuple, constraints: list, variables=None):
+        super().__init__(constraints, variables)
+        assert isinstance(bounds, tuple), bounds
+        self._timevar = timevar
+        self._bounds = bounds
+
+        if bounds[0] is not None:
+            self._constraints.append(timevar >= bounds[0])
+        if bounds[1] is not None:
+            self._constraints.append(timevar <= bounds[1])
 
 
 if __name__ == "__main__":
     x, y, z = symbols("x y z")
 
     P1 = Polyhedron(
-        [x - y <= 1, 2 * x <= 1, 2 * x >= 1, -x <= 3, x + z >= 3, z + y >= x]
+        [x - y <= 1, 2 * x <= 1, 2 * x >= 1, -x <= 3, x + z >= 3, z + y <= x]
     )
     print("P1:", P1)
     P = P1.eliminate(x)
