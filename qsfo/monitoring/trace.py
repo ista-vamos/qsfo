@@ -45,12 +45,31 @@ class SignalsTrace(list):
             N = len(header)
             for n, line in enumerate(f):
                 vals = line.split()
-                if len(vals) != len(header):
+                if len(vals) != N:
                     raise RuntimeError(f"Missing values on line {n+2}")
 
                 tr.append({header[i]: float(vals[i]) for i in range(N)})
 
             return tr
+
+    def from_list(lst: list):
+        """
+        Create trace from a file containing sampled signals.
+        We assume that the first element of the list is a header.
+        The first name is the time variable, the rest of the names are names of the signals.
+        For example `t f g`. Then, every other line gives the values `t f(t) g(t)`.
+        """
+        header = lst[0]
+        tr = SignalsTrace(header, [])
+        N = len(header)
+        for n, row in enumerate(lst[1:]):
+            if len(row) != N:
+                raise RuntimeError(f"Missing values on line {n+2}")
+
+            tr.append({header[i]: float(row[i]) for i in range(N)})
+
+        return tr
+
 
     def piecewise_linear_signal(self, varname) -> list:
         """
