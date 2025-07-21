@@ -77,7 +77,6 @@ class Formula2Polyhedra:
 
     def _new_var(self, name=None):
         if name:
-            print("Creating var", name)
             return self._vars.get(name, Var(name))
 
         self.__annon_vars_idx += 1
@@ -155,7 +154,6 @@ class Formula2Polyhedra:
         chld = formula.children()
 
         if isinstance(formula, Exists):
-            # TODO: add bounds
             q = formula.quantifier()
             qv = q.var().expr()
             phl = self.translate(formula.children()[0], trace)

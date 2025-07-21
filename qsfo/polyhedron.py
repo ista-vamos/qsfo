@@ -75,7 +75,12 @@ class Polyhedron:
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars().union(rhs.vars()))
 
-    def eliminate(self, var: Var):
+    def eliminate(self, var: Var, do_simplify=True):
+        """
+        Eliminate the variable `var` from this polyhedron.
+        We use Fourier-Motzkin elimination for now.
+        Simplify the final polyhedron constraints if `simplify` is set to True.
+        """
         if len(self.vars()) == 1:
             raise RuntimeError(
                 "Eliminating the last variable will yield an empty Polyhedron"
@@ -130,6 +135,8 @@ class Polyhedron:
         assert not any(c.has(var) for c in constraints), (var, constraints)
         variables = self.vars().copy()
         variables.remove(var)
+        if do_simplify:
+            constraints = simplify_constraints(constraints)
         return Polyhedron(constraints, variables)
 
     def constraints(self):

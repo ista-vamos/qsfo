@@ -4,6 +4,7 @@ import sys
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
 from qsfo.monitoring.boolean import Formula2Polyhedra
+from qsfo.polyhedron import simplify_constraints
 
 if __name__ == "__main__":
     parser = Parser()
