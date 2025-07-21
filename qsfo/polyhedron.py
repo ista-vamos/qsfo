@@ -150,7 +150,7 @@ class Polyhedron:
         # return f'{{{", ".join(map(str, self._constraints))}}}'
 
 
-class TimedPolyhedron(Polyhedron):
+class PolyhedronWithTime(Polyhedron):
     """
     Polyhedron with explicit bounds on the time variable.
     """
@@ -169,7 +169,7 @@ class TimedPolyhedron(Polyhedron):
             self._vars.add(timevar)
 
     def substitute(self, S: dict, variables=None):
-        return TimedPolyhedron(
+        return PolyhedronWithTime(
             self._timevar, self._bounds, self.substitute_constraints(S), variables
         )
 

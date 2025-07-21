@@ -1,4 +1,4 @@
-from ..polyhedron import TimedPolyhedron, Var
+from ..polyhedron import PolyhedronWithTime, Var
 from sympy import Rational
 
 
@@ -88,7 +88,7 @@ class SignalsTrace(list):
             b = Rational(last[varname]) - a * Rational(last[t])
             line = a * timevar + b
             sig.append(
-                TimedPolyhedron(
+                PolyhedronWithTime(
                     timevar,
                     (last[t], cur[t]),
                     constraints=[line - resvar <= 0, 0 <= line - resvar],
