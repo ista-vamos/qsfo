@@ -70,7 +70,6 @@ class SignalsTrace(list):
 
         return tr
 
-
     def piecewise_linear_signal(self, varname) -> list:
         """
         Get the piecewise linear signal for a particular variable
