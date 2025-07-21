@@ -27,4 +27,7 @@ if __name__ == "__main__":
     print("--- ---")
 
     f2ph = Formula2Polyhedra()
-    f2ph.translate(formula)
+    mon_signal = f2ph.translate(formula, trace)
+    print("Monitoring signal:")
+    for sig in mon_signal:
+        print(sig)

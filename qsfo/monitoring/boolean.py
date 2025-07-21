@@ -11,11 +11,16 @@ class PolyhedraList:
 
     TODO: keep it sorted to optimize the operations
     """
+
     def __init__(self, *args):
+        assert all(isinstance(i, Polyhedron) for i in args), args
         self._phs = list(args)
 
     def add(self, ph):
         self._phs.append(ph)
+
+    def union(self, other: "PolyhedraList"):
+        return PolyhedraList(*(self._phs + other._phs))
 
     def intersection(self, other):
         """
@@ -40,6 +45,9 @@ class PolyhedraList:
     def __len__(self):
         return len(self._phs)
 
+    def __iter__(self):
+        return iter(self._phs)
+
     def __str__(self):
         return f'{{{", ".join(map(str, self._phs))}}}'
 
@@ -57,8 +65,7 @@ class FormulaPolyhedraList(PolyhedraList):
         return self._var
 
     def __str__(self):
-        return f'{self._var} ==> {super().__str__()}'
-
+        return f"{self._var} ==> {super().__str__()}"
 
 
 class Formula2Polyhedra:
@@ -75,7 +82,7 @@ class Formula2Polyhedra:
 
         self.__annon_vars_idx += 1
         idx = self.__annon_vars_idx
-        return Var(f'v_{idx}')
+        return Var(f"v_{idx}")
 
     def _get_var(self, name):
         return self._vars.get(name, self._new_var(name))
@@ -84,36 +91,29 @@ class Formula2Polyhedra:
         # FIXME: not using bounds here
         return Polyhedron(list(args))
 
-    def _term(self, formula, bounds):
+    def _term(self, formula, trace, bounds):
         resvar = self._new_var()
         if isinstance(formula, (TimeVar, ValueVar)):
             sub_vars = resvar - self._get_var(formula.name())
             return FormulaPolyhedraList(
-                resvar,
-                self._create_ph(
-                    (None, None), sub_vars <= 0, 0 <= sub_vars
-                )
+                resvar, self._create_ph((None, None), sub_vars <= 0, 0 <= sub_vars)
             )
         if isinstance(formula, Constant):
             print("FIXME: add bounds on the value from quantifiers")
             sub_vars = resvar - formula.value()
             return FormulaPolyhedraList(
-                resvar,
-                self._create_ph(
-                    (None, None), sub_vars <= 0, 0 <= sub_vars
-                )
+                resvar, self._create_ph((None, None), sub_vars <= 0, 0 <= sub_vars)
             )
         if isinstance(formula, (TimeOp, ValueOp)):
             op = formula.op()
             if op in ("+", "-"):
                 assert len(formula.children()) == 2, formula
-                lhs = self.term(formula.children()[0])
-                rhs = self.term(formula.children()[1])
+                lhs = self.term(formula.children()[0], trace)
+                rhs = self.term(formula.children()[1], trace)
                 assert lhs is not None, formula
                 assert rhs is not None, formula
-                assert len(lhs) == 1, lhs
-                assert len(rhs) == 1, rhs
-
+                assert len(lhs) > 0, lhs
+                assert len(rhs) > 0, rhs
 
                 if op == "+":
                     expr = lhs.var() + rhs.var()
@@ -124,25 +124,72 @@ class Formula2Polyhedra:
 
                 fph = FormulaPolyhedraList(
                     resvar,
-                    lhs.intersection(rhs).intersection(self._create_ph((None, None), resvar <= expr, expr <= resvar))
+                    *lhs.intersection(rhs).intersection(
+                        self._create_ph((None, None), resvar <= expr, expr <= resvar)
+                    ),
                 )
                 fph.eliminate(lhs.var()).eliminate(rhs.var())
                 return fph
             else:
                 raise NotImplementedError(f"Operation not implemented: {formula}")
+        if isinstance(formula, Signal):
+            sig = formula.name()
+            arg = formula.arg()
+            segments = trace.piecewise_linear_signal(sig)
+            tvar, svar = segments.timevar(), segments.sigvar()
+            segments = [
+                seg.substitute({tvar: arg.expr(), svar: resvar}) for seg in segments
+            ]
+            # for seg in segments:
+            #    print(str(seg))
+            return FormulaPolyhedraList(resvar, *segments)
 
+        else:
+            raise NotImplementedError(f"Translation of term not implemented: {formula}")
 
-    def term(self, formula):
-        return self._term(formula, (None, None))
+    def term(self, formula, trace):
+        return self._term(formula, trace, (None, None))
 
-    def translate(self, formula):
-        def _translate(f, lvl):
-            if isinstance(f, Term):
-                print(f)
-                r = self.term(f)
-                print(r)
-                print("----")
+    def translate(self, formula, trace):
 
-        # This is for testing now, in the real version
-        # we do a manual top-down recursion
-        formula.visit_dfs(_translate)
+        chld = formula.children()
+
+        if isinstance(formula, Exists):
+            # TODO: add bounds
+            q = formula.quantifier()
+            qv = q.var().expr()
+            phl = self.translate(formula.children()[0], trace)
+            bounds = q.bounds()
+            if bounds:
+                phl = phl.intersection(
+                    self._create_ph((None, None), bounds[0] <= qv, qv <= bounds[1])
+                )
+            return phl.eliminate(qv)
+        elif isinstance(formula, Not):
+            # TODO
+            print("TODO: implement Not")
+            f = self.translate(formula.children()[0], trace)
+            return f
+        elif isinstance(formula, LessOrEqual):
+            assert len(chld) == 2, chld
+            if isinstance(chld[0], TimeTerm):
+                assert isinstance(chld[1], (TimeTerm, Constant)), chld[1]
+                term = TimeOp("-", chld[0], chld[1])
+            elif isinstance(chld[0], ValueTerm):
+                assert isinstance(chld[1], (ValueTerm, Constant)), chld[1]
+                term = ValueOp("-", chld[0], chld[1])
+            else:
+                raise NotImplementedError(f"Unhandled term: {chld[0]}")
+
+            lhs = self.term(term, trace)
+            lvar = lhs.var()
+            return lhs.intersection(self._create_ph((None, None), lvar < 0)).eliminate(
+                lvar
+            )
+        elif isinstance(formula, Or):
+            assert len(chld) == 2, chld
+            return self.translate(chld[0], trace).union(self.translate(chld[1], trace))
+        else:
+            raise NotImplementedError(
+                f"Unhandled formula type '{type(formula)}': {formula}"
+            )

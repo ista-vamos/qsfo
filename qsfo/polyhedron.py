@@ -135,6 +135,16 @@ class Polyhedron:
     def constraints(self):
         return self._constraints
 
+    def substitute_constraints(self, S: dict) -> list:
+        """
+        Perform substitution in the constraints, return the modified constraints.
+        """
+        S_list = list(S.items())
+        return [c.subs(S_list) for c in self._constraints]
+
+    def substitute(self, S: dict, variables=None):
+        return Polyhedron(self.substitute_constraints(S), variables)
+
     def __str__(self):
         return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
         # return f'{{{", ".join(map(str, self._constraints))}}}'
@@ -155,6 +165,11 @@ class TimedPolyhedron(Polyhedron):
             self._constraints.append(timevar >= bounds[0])
         if bounds[1] is not None:
             self._constraints.append(timevar <= bounds[1])
+
+    def substitute(self, S: dict, variables=None):
+        return TimedPolyhedron(
+            self._timevar, self._bounds, self.substitute_constraints(S), variables
+        )
 
 
 if __name__ == "__main__":

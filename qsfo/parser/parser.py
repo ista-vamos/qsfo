@@ -1,5 +1,6 @@
 from lark import Lark, logger, Transformer
-from .. formula import *
+from ..formula import *
+
 
 class AstTransformer(Transformer):
     def timeterm(self, items):
@@ -10,7 +11,7 @@ class AstTransformer(Transformer):
 
     def timeadd(self, items):
         assert len(items) == 2, items
-        return TimeOp('+', items[0], items[1])
+        return TimeOp("+", items[0], items[1])
 
     def timeconst(self, items):
         assert len(items) == 1
@@ -69,14 +70,6 @@ class AstTransformer(Transformer):
         assert len(items) == 1 or isinstance(items[1], tuple), items
         return (items[0], items[1] if len(items) > 1 else None)
 
-    def exists(self, items):
-        assert len(items) == 2
-        assert isinstance(items[0], tuple), items
-        assert isinstance(items[1], Formula), items
-        print(items[1].variables())
-        assert False
-        return Exists(Quantifier(*items[0]), items[1])
-
     def neg(self, items):
         return Not(items[0])
 
@@ -86,7 +79,7 @@ class AstTransformer(Transformer):
         assert isinstance(items[1], Formula), items
         return Or(items[0], items[1])
 
-    def forall(self, items):
+    def _exists(self, items):
         assert len(items) == 2
         assert isinstance(items[0], tuple), items
         assert isinstance(items[1], Formula), items
@@ -94,16 +87,28 @@ class AstTransformer(Transformer):
         # gather all variables in the sub-formula with the quantified name
         vars = [v for v in items[1].free_variables() if var == v.name()]
         if not vars:
-            raise RuntimeError(f'Binding non-existing variable `{var}` in formula `{items[1]}` with free variables: {",".join(map(str, items[1].free_variables()))}')
+            raise RuntimeError(
+                f'Binding non-existing variable `{var}` in formula `{items[1]}` with free variables: {",".join(map(str, items[1].free_variables()))}'
+            )
         if any(var == v for v in items[1].bound_variables()):
-            raise NotImplementedError(f'A variable shadows another variable, this is not supported atm: {items[1]}, bound variables: {items[1].bound_variables()}')
+            raise NotImplementedError(
+                f"A variable shadows another variable, this is not supported atm: {items[1]}, bound variables: {items[1].bound_variables()}"
+            )
 
         var = vars[0]
         if any(type(v) != type(var) for v in vars):
-            raise RuntimeError(f'A variable is used both as a value and time variable: {items[1]}, {var}')
+            raise RuntimeError(
+                f"A variable is used both as a value and time variable: {items[1]}, {var}"
+            )
+        return Quantifier(var, bounds), items[1]
 
+    def exists(self, items):
+        q, formula = self._exists(items)
+        return Exists(q, formula)
 
-        return Not(Exists(Quantifier(var, bounds), Not(items[1])))
+    def forall(self, items):
+        q, formula = self._exists(items)
+        return Not(Exists(q, Not(formula)))
 
     def number(self, items):
         assert len(items) == 1
@@ -124,12 +129,12 @@ def process_ast(ast):
     T = AstTransformer()
     return T.transform(ast)
 
+
 class Parser:
     def __init__(self):
-        self._parser = Lark.open("grammar.lark",
-                                 rel_to=__file__,
-                                 debug=False,
-                                 start="start")
+        self._parser = Lark.open(
+            "grammar.lark", rel_to=__file__, debug=False, start="start"
+        )
 
     def parse(self, what: str):
         return process_ast(self._parser.parse(what))

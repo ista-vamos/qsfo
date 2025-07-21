@@ -1,3 +1,6 @@
+from sympy import Rational, Symbol, Abs
+
+
 class Formula:
 
     def __init__(self, children):
@@ -169,7 +172,10 @@ class LessOrEqual(Formula):
 
 
 class Term(Formula):
-    pass
+
+    def expr(self):
+        """Return Sympy expr"""
+        raise NotImplementedError("Must be overriden")
 
 
 class Constant(Term):
@@ -188,6 +194,9 @@ class Constant(Term):
 
     def value(self):
         return self._value
+
+    def expr(self):
+        return Rational(self._value)
 
     def __str__(self):
         return str(self.value())
@@ -214,6 +223,10 @@ class TimeVar(TimeTerm):
     def free_variables(self):
         return [self]
 
+    def expr(self):
+        # XXX: we might want to cache these
+        return Symbol(self._name)
+
     def __eq__(self, other):
         return isinstance(other, (TimeVar, ValueVar)) and self.name() == other.name()
 
@@ -231,6 +244,15 @@ class TimeOp(TimeTerm):
 
     def root_str(self):
         return str(self.op())
+
+    def expr(self):
+        op = self.op()
+        ch = self.children()
+        if op == "+":
+            return ch[0].expr() + ch[1].expr()
+        if op == "-":
+            return ch[0].expr() - ch[1].expr()
+        raise NotImplementedError(f"Unknown operation: {op}")
 
     def __str__(self):
         op = self.op()
@@ -258,6 +280,10 @@ class ValueVar(ValueTerm):
     def free_variables(self):
         return [self]
 
+    def expr(self):
+        # XXX: we might want to cache these
+        return Symbol(self._name)
+
     def __eq__(self, other):
         return isinstance(other, (TimeVar, ValueVar)) and self.name() == other.name()
 
@@ -266,7 +292,7 @@ class ValueVar(ValueTerm):
 
 
 class Signal(ValueTerm):
-    def __init__(self, name, arg):
+    def __init__(self, name: str, arg: Term):
         super().__init__([arg])
         self._name = name
 
@@ -294,6 +320,17 @@ class ValueOp(ValueTerm):
     def root_str(self):
         return str(self.op())
 
+    def expr(self):
+        op = self.op()
+        ch = self.children()
+        if op == "+":
+            return ch[0].expr() + ch[1].expr()
+        if op == "-":
+            return ch[0].expr() - ch[1].expr()
+        if op == "abs":
+            return Abs(ch[0].expr(), ch[1].expr())
+        raise NotImplementedError(f"Unknown operation: {op}")
+
     def __str__(self):
         op = self.op()
         ch = self.children()
@@ -312,19 +349,19 @@ class Quantifier(Formula):
         super().__init__([])
         assert isinstance(variable, (TimeVar, ValueVar))
         self._var = variable
-        self._bound = bound
+        self._bounds = bound
 
     def var(self):
         return self._var
 
-    def bound(self):
-        return self._bound
+    def bounds(self):
+        return self._bounds
 
     def __eq__(self, other):
         return self.var() == other.var()
 
     def __str__(self):
-        b = self._bound
+        b = self._bounds
         bound = f"∈[{b[0]}, {b[1]}]" if b else ""
         return f"{self.var()}{bound}"
 
