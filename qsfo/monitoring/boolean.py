@@ -122,14 +122,15 @@ class Formula2Polyhedra:
                 else:
                     raise NotImplementedError(f"Operation not implemented: {formula}")
 
-                fph = FormulaPolyhedraList(
-                    resvar,
-                    *lhs.intersection(rhs).intersection(
+                phl = (
+                    lhs.intersection(rhs)
+                    .intersection(
                         self._create_ph((None, None), resvar <= expr, expr <= resvar)
-                    ),
+                    )
+                    .eliminate(lhs.var())
+                    .eliminate(rhs.var())
                 )
-                fph.eliminate(lhs.var()).eliminate(rhs.var())
-                return fph
+                return FormulaPolyhedraList(resvar, *phl)
             else:
                 raise NotImplementedError(f"Operation not implemented: {formula}")
         if isinstance(formula, Signal):
@@ -151,7 +152,6 @@ class Formula2Polyhedra:
         return self._term(formula, trace, (None, None))
 
     def translate(self, formula, trace):
-
         chld = formula.children()
 
         if isinstance(formula, Exists):
@@ -170,7 +170,7 @@ class Formula2Polyhedra:
             print("TODO: implement Not")
             f = self.translate(formula.children()[0], trace)
             return f
-        elif isinstance(formula, LessOrEqual):
+        elif isinstance(formula, (LessThan, LessOrEqual)):
             assert len(chld) == 2, chld
             if isinstance(chld[0], TimeTerm):
                 assert isinstance(chld[1], (TimeTerm, Constant)), chld[1]
@@ -183,7 +183,14 @@ class Formula2Polyhedra:
 
             lhs = self.term(term, trace)
             lvar = lhs.var()
-            return lhs.intersection(self._create_ph((None, None), lvar < 0)).eliminate(
+            if isinstance(formula, LessOrEqual):
+                cmp_term = lvar <= 0
+            elif isinstance(formula, LessThan):
+                cmp_term = lvar < 0
+            else:
+                raise NotImplementedError(f"Invalid comparison: {formula}")
+
+            return lhs.intersection(self._create_ph((None, None), cmp_term)).eliminate(
                 lvar
             )
         elif isinstance(formula, Or):

@@ -94,4 +94,5 @@ class SignalsTrace(list):
                     constraints=[line - resvar <= 0, 0 <= line - resvar],
                 )
             )
+            last = cur
         return sig

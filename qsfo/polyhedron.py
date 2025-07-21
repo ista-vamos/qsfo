@@ -165,6 +165,8 @@ class TimedPolyhedron(Polyhedron):
             self._constraints.append(timevar >= bounds[0])
         if bounds[1] is not None:
             self._constraints.append(timevar <= bounds[1])
+        if bounds[0] is not None or bounds[1] is not None:
+            self._vars.add(timevar)
 
     def substitute(self, S: dict, variables=None):
         return TimedPolyhedron(

@@ -10,7 +10,7 @@ from qsfo.monitoring.boolean import Formula2Polyhedra
 if __name__ == "__main__":
     formula = Parser().parse(r"f(t) \le g(t)")
 
-    signal1 = SignalsTrace.from_list(
+    signal = SignalsTrace.from_list(
         [
             ["t", "f", "g"],
             [0, 2, 2],
@@ -18,6 +18,6 @@ if __name__ == "__main__":
         ]
     )
     print(formula)
-    mon_signal = Formula2Polyhedra().translate(formula, signal1)
+    mon_signal = Formula2Polyhedra().translate(formula, signal)
     for sig in mon_signal:
         print(sig)
