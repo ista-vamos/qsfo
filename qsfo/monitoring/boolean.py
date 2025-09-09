@@ -42,6 +42,9 @@ class PolyhedraList:
     def eliminate(self, var: Var):
         return PolyhedraList(*(p.eliminate(var) for p in self._phs))
 
+    def vars(self):
+        return set(v for ph in self._phs for v in ph.vars())
+
     def __len__(self):
         return len(self._phs)
 
@@ -69,6 +72,11 @@ class FormulaPolyhedraList(PolyhedraList):
 
 
 class Formula2Polyhedra:
+    """
+    Translate a formula to a polyhedra list. If the formula contains a signal,
+    this process amounts to monitoring.
+    """
+
     def __init__(self):
         # cache for variables
         self._vars = {}
@@ -193,7 +201,10 @@ class Formula2Polyhedra:
             )
         elif isinstance(formula, Or):
             assert len(chld) == 2, chld
-            return self.translate(chld[0], trace).union(self.translate(chld[1], trace))
+            return self.translate(chld[0], trace, var_bounds).union(self.translate(chld[1], trace, var_bounds))
+        elif isinstance(formula, And):
+            assert len(chld) == 2, chld
+            return self.translate(chld[0], trace, var_bounds).intersection(self.translate(chld[1], trace, var_bounds))
         else:
             raise NotImplementedError(
                 f"Unhandled formula type '{type(formula)}': {formula}"
