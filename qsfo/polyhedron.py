@@ -66,6 +66,16 @@ class Polyhedron:
     def is_empty(self):
         return not self._vars
 
+
+    def simplify(self) -> "Polyhedron":
+        C = simplify_constraints(self._constraints)
+        if not C:
+            # unsat constraints
+            return Polyhedron([])
+        return Polyhedron(C, variables=self.vars())
+
+
+
     def intersection(self, rhs: "Polyhedron"):
         print("FIXME: simplify and return empty/universal if possible")
         # C = simplify_constraints(self._constraints + rhs._constraints)
@@ -75,7 +85,7 @@ class Polyhedron:
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars().union(rhs.vars()))
 
-    def eliminate(self, var: Var, do_simplify=True):
+    def eliminate(self, var: Var, do_simplify=False):
         """
         Eliminate the variable `var` from this polyhedron.
         We use Fourier-Motzkin elimination for now.
