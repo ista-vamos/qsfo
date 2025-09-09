@@ -85,8 +85,6 @@ class AstTransformer(Transformer):
         assert isinstance(items[1], Formula), items
         return And(items[0], items[1])
 
-
-
     def _exists(self, items):
         assert len(items) == 2
         assert isinstance(items[0], tuple), items

@@ -98,14 +98,16 @@ class Formula2Polyhedra:
         return Polyhedron(list(args))
 
     def _term(self, formula, trace, bounds):
+        print("transl. term", formula, bounds)
         resvar = self._new_var()
         if isinstance(formula, (TimeVar, ValueVar)):
-            sub_vars = resvar - self._get_var(formula.name())
+            print("FIXME 102: add bounds on the value from quantifiers", bounds)
+            v = self._get_var(formula.name())
+            sub_vars = resvar - v
             return FormulaPolyhedraList(
                 resvar, self._create_ph(sub_vars <= 0, 0 <= sub_vars)
             )
         if isinstance(formula, Constant):
-            print("FIXME: add bounds on the value from quantifiers")
             sub_vars = resvar - formula.value()
             return FormulaPolyhedraList(
                 resvar, self._create_ph(sub_vars <= 0, 0 <= sub_vars)
@@ -130,9 +132,7 @@ class Formula2Polyhedra:
 
                 phl = (
                     lhs.intersection(rhs)
-                    .intersection(
-                        self._create_ph(resvar <= expr, expr <= resvar)
-                    )
+                    .intersection(self._create_ph(resvar <= expr, expr <= resvar))
                     .eliminate(lhs.var())
                     .eliminate(rhs.var())
                 )
@@ -149,8 +149,20 @@ class Formula2Polyhedra:
             ]
             # for seg in segments:
             #    print(str(seg))
-            return FormulaPolyhedraList(resvar, *segments)
+            phl = FormulaPolyhedraList(resvar, *segments)
+            if bounds:
+                applicable_bounds = []
+                for v in phl.vars():
+                    B = bounds.get(v)
+                    if B:
+                        applicable_bounds.append(B[0] <= v)
+                        applicable_bounds.append(v <= B[1])
 
+                if applicable_bounds:
+                    phl = FormulaPolyhedraList(
+                        resvar, *phl.intersection(self._create_ph(*applicable_bounds))
+                    )
+            return phl
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
 
@@ -165,6 +177,7 @@ class Formula2Polyhedra:
                        formula
         """
 
+        print("translating ", formula, var_bounds)
         chld = formula.children()
 
         if isinstance(formula, Exists):
@@ -207,15 +220,17 @@ class Formula2Polyhedra:
             else:
                 raise NotImplementedError(f"Invalid comparison: {formula}")
 
-            return lhs.intersection(self._create_ph(cmp_term)).eliminate(
-                lvar
-            )
+            return lhs.intersection(self._create_ph(cmp_term)).eliminate(lvar)
         elif isinstance(formula, Or):
             assert len(chld) == 2, chld
-            return self.translate(chld[0], trace, var_bounds).union(self.translate(chld[1], trace, var_bounds))
+            return self.translate(chld[0], trace, var_bounds).union(
+                self.translate(chld[1], trace, var_bounds)
+            )
         elif isinstance(formula, And):
             assert len(chld) == 2, chld
-            return self.translate(chld[0], trace, var_bounds).intersection(self.translate(chld[1], trace, var_bounds))
+            return self.translate(chld[0], trace, var_bounds).intersection(
+                self.translate(chld[1], trace, var_bounds)
+            )
         else:
             raise NotImplementedError(
                 f"Unhandled formula type '{type(formula)}': {formula}"
