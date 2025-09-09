@@ -94,8 +94,7 @@ class Formula2Polyhedra:
     def _get_var(self, name):
         return self._vars.get(name, self._new_var(name))
 
-    def _create_ph(self, bounds, *args):
-        # FIXME: not using bounds here
+    def _create_ph(self, *args):
         return Polyhedron(list(args))
 
     def _term(self, formula, trace, bounds):
@@ -103,20 +102,20 @@ class Formula2Polyhedra:
         if isinstance(formula, (TimeVar, ValueVar)):
             sub_vars = resvar - self._get_var(formula.name())
             return FormulaPolyhedraList(
-                resvar, self._create_ph((None, None), sub_vars <= 0, 0 <= sub_vars)
+                resvar, self._create_ph(sub_vars <= 0, 0 <= sub_vars)
             )
         if isinstance(formula, Constant):
             print("FIXME: add bounds on the value from quantifiers")
             sub_vars = resvar - formula.value()
             return FormulaPolyhedraList(
-                resvar, self._create_ph((None, None), sub_vars <= 0, 0 <= sub_vars)
+                resvar, self._create_ph(sub_vars <= 0, 0 <= sub_vars)
             )
         if isinstance(formula, (TimeOp, ValueOp)):
             op = formula.op()
             if op in ("+", "-"):
                 assert len(formula.children()) == 2, formula
-                lhs = self.term(formula.children()[0], trace)
-                rhs = self.term(formula.children()[1], trace)
+                lhs = self.term(formula.children()[0], trace, bounds)
+                rhs = self.term(formula.children()[1], trace, bounds)
                 assert lhs is not None, formula
                 assert rhs is not None, formula
                 assert len(lhs) > 0, lhs
@@ -132,7 +131,7 @@ class Formula2Polyhedra:
                 phl = (
                     lhs.intersection(rhs)
                     .intersection(
-                        self._create_ph((None, None), resvar <= expr, expr <= resvar)
+                        self._create_ph(resvar <= expr, expr <= resvar)
                     )
                     .eliminate(lhs.var())
                     .eliminate(rhs.var())
@@ -155,26 +154,38 @@ class Formula2Polyhedra:
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
 
-    def term(self, formula, trace):
-        return self._term(formula, trace, (None, None))
+    def term(self, formula, trace, bounds):
+        return self._term(formula, trace, bounds)
 
-    def translate(self, formula, trace):
+    def translate(self, formula: Formula, trace, var_bounds: dict = None):
+        """
+        Translate a formula into a polyhedra list.
+
+        :param bounds: bounds on variables gathered while traversing the
+                       formula
+        """
+
         chld = formula.children()
 
         if isinstance(formula, Exists):
             q = formula.quantifier()
             qv = q.var().expr()
-            phl = self.translate(formula.children()[0], trace)
             bounds = q.bounds()
+
+            new_var_bounds = {} if not var_bounds else var_bounds.copy()
+            assert qv not in new_var_bounds, (qv, new_var_bounds)
+            new_var_bounds[qv] = bounds
+
+            phl = self.translate(formula.children()[0], trace, new_var_bounds)
             if bounds:
                 phl = phl.intersection(
-                    self._create_ph((None, None), bounds[0] <= qv, qv <= bounds[1])
+                    self._create_ph(bounds[0] <= qv, qv <= bounds[1])
                 )
             return phl.eliminate(qv)
         elif isinstance(formula, Not):
             # TODO
             print("TODO: implement Not")
-            f = self.translate(formula.children()[0], trace)
+            f = self.translate(formula.children()[0], trace, var_bounds)
             return f
         elif isinstance(formula, (LessThan, LessOrEqual)):
             assert len(chld) == 2, chld
@@ -187,7 +198,7 @@ class Formula2Polyhedra:
             else:
                 raise NotImplementedError(f"Unhandled term: {chld[0]}")
 
-            lhs = self.term(term, trace)
+            lhs = self.term(term, trace, var_bounds)
             lvar = lhs.var()
             if isinstance(formula, LessOrEqual):
                 cmp_term = lvar <= 0
@@ -196,7 +207,7 @@ class Formula2Polyhedra:
             else:
                 raise NotImplementedError(f"Invalid comparison: {formula}")
 
-            return lhs.intersection(self._create_ph((None, None), cmp_term)).eliminate(
+            return lhs.intersection(self._create_ph(cmp_term)).eliminate(
                 lvar
             )
         elif isinstance(formula, Or):
