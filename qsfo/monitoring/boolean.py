@@ -95,7 +95,6 @@ class Formula2Polyhedra:
 
     def translate(self, formula: Formula, trace):
         phl = self._translate(formula, trace, None)
-        return phl
         return phl.simplify()
 
 

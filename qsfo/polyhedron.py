@@ -1,6 +1,6 @@
 from itertools import product
 
-from sympy import symbols, Symbol, simplify, reduce_inequalities, And
+from sympy import symbols, Symbol, simplify, reduce_inequalities, And, false, true
 from sympy.core.numbers import Infinity, NegativeInfinity
 
 Var = Symbol
@@ -37,9 +37,10 @@ def to_le(term):
 def simplify_constraints(C: list):
     expr = simplify(And(*C))
     elems = expr.args
-    if expr is False:
+    if expr == false:
         return []
-    assert expr is not True, f"And'ed constraints simplified to True: {C}"
+    assert expr != true, f"And'ed constraints simplified to True: {C}"
+    assert elems != (), (elems, expr, type(expr))
 
     if isinstance(expr, And):
         return [c for e in expr.args for c in break_eqs((e,))]
@@ -57,6 +58,7 @@ class Polyhedron:
 
     def __init__(self, constraints: list, variables=None):
         # matrix of inequalities
+        assert () not in constraints, constraints
         self._constraints = constraints
         self._vars = variables or set(v for c in constraints for v in c.atoms(Var))
 
@@ -66,14 +68,18 @@ class Polyhedron:
     def is_empty(self):
         return not self._vars
 
+    def is_universal(self):
+        return self._vars and not self._constraints
 
     def simplify(self) -> "Polyhedron":
+        if self.is_empty() or self.is_universal():
+            return Polyhedron(self.constraints(), variables=self.vars())
+
         C = simplify_constraints(self._constraints)
         if not C:
             # unsat constraints
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars())
-
 
 
     def intersection(self, rhs: "Polyhedron"):
@@ -163,6 +169,10 @@ class Polyhedron:
         return Polyhedron(self.substitute_constraints(S), variables)
 
     def __str__(self):
+        if self.is_empty():
+            return "∅"
+        if self.is_universal():
+            return f'UNIV({self._vars})'
         return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
         # return f'{{{", ".join(map(str, self._constraints))}}}'
 
