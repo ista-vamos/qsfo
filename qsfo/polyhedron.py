@@ -34,7 +34,85 @@ def to_le(term):
     return term
 
 
-def simplify_constraints(C: list):
+def get_bounds(C: list) -> dict:
+    """
+    Scan the list of constraints and get integer bounds
+    on the variables.
+
+    The function could be done more efficient (not storing the lists of values, but computing
+    min/max on the fly), but we'll see if it is necessary.
+
+    TODO: use Interval from sympy, to handle also strict inequalities
+    """
+    # eqs = {}
+    lb = {}
+    ub = {}
+    for term in C:
+        op, lhs, rhs = term.rel_op, term.lhs, term.rhs
+        if op == "==":
+            if lhs.is_symbol and rhs.is_constant:
+                ub.setdefault(lhs, []).append(rhs)
+                lb.setdefault(lhs, []).append(rhs)
+                # eqs.setdefault(lhs, []).append(rhs)
+            elif rhs.is_symbol and lhs.is_constant:
+                ub.setdefault(rhs, []).append(lhs)
+                lb.setdefault(rhs, []).append(lhs)
+                # eqs.setdefault(rhs, []).append(lhs)
+        elif op in ("<=", "<"):
+            if lhs.is_symbol and rhs.is_constant:
+                ub.setdefault(lhs, []).append(rhs)
+            elif rhs.is_symbol and lhs.is_constant:
+                lb.setdefault(rhs, []).append(lhs)
+        elif op in (">=", ">"):
+            if lhs.is_symbol and rhs.is_constant:
+                lb.setdefault(lhs, []).append(rhs)
+            elif rhs.is_symbol and lhs.is_constant:
+                ub.setdefault(rhs, []).append(lhs)
+
+    bounds = {}
+    variables = set(iter(lb.keys()))
+    variables.update(iter(ub.keys()))
+
+    for v in variables:
+        bounds[v] = (max(lb.get(v, []), default=None), min(ub.get(v, []), default=None))
+
+    return bounds
+
+
+def remove_redundant_constraints(C: list) -> list:
+    B = get_bounds(C)
+    if not B:
+        return
+
+    new_C = []
+    # add bounds for these variables to the constraints
+    add_bounds_for = set()
+    for term in C:
+        op, lhs, rhs = term.rel_op, term.lhs, term.rhs
+        # if op not in ("==", "<=", ">=", "<", ">"):
+        # NOTE: the strict inequalities are not handled here yet
+        if op not in ("==", "<=", ">="):
+            new_C.append(term)
+            continue
+
+        if lhs.is_symbol and lhs in B and rhs.is_constant:
+            # drop this term and add the bound instead
+            add_bounds_for.add(lhs)
+        elif rhs.is_symbol and rhs in B and lhs.is_constant:
+            # drop this term and add the bound instead
+            add_bounds_for.add(rhs)
+
+    for v in add_bounds_for:
+        l, u = B[v]
+        if l is not None:
+            new_C.append(l <= v)
+        if u is not None:
+            new_C.append(v <= u)
+
+    return new_C
+
+
+def simplify_constraints(C: list, eq_break=True):
     expr = simplify(And(*C))
     elems = expr.args
     if expr == false:
@@ -43,10 +121,31 @@ def simplify_constraints(C: list):
     assert elems != (), (elems, expr, type(expr))
 
     if isinstance(expr, And):
-        return [c for e in expr.args for c in break_eqs((e,))]
+        if eq_break:
+            C = [c for e in expr.args for c in break_eqs((e,))]
+        else:
+            C = list(expr.args)
+        return remove_redundant_constraints(C)
     else:
         # simplified to a single expression
         return [elems]
+
+
+def complement_term(term):
+    """
+    Return a list of terms whose union describe the complementary constraints.
+    """
+    op, lhs, rhs = term.rel_op, term.lhs, term.rhs
+    if op == "==":
+        return [lhs < rhs, rhs < lhs]
+    elif op == "<=":
+        return [lhs > rhs]
+    elif op == "<":
+        return [lhs >= rhs]
+    elif op == ">":
+        return [lhs <= rhs]
+    elif op == ">=":
+        return [lhs < rhs]
 
 
 class Polyhedron:
@@ -71,16 +170,15 @@ class Polyhedron:
     def is_universal(self):
         return self._vars and not self._constraints
 
-    def simplify(self) -> "Polyhedron":
+    def simplify(self, eq_break=True) -> "Polyhedron":
         if self.is_empty() or self.is_universal():
             return Polyhedron(self.constraints(), variables=self.vars())
 
-        C = simplify_constraints(self._constraints)
+        C = simplify_constraints(self._constraints, eq_break)
         if not C:
             # unsat constraints
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars())
-
 
     def intersection(self, rhs: "Polyhedron"):
         print("FIXME: simplify and return empty/universal if possible")
@@ -90,6 +188,16 @@ class Polyhedron:
             # unsat constraints
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars().union(rhs.vars()))
+
+    def complement(self) -> list:
+        """
+        Return a list of Polyhedra that describe the complement of this polyhedron.
+        """
+        return [
+            Polyhedron([cc], variables=self.vars())
+            for c in self._constraints
+            for cc in complement_term(c)
+        ]
 
     def eliminate(self, var: Var, do_simplify=False):
         """
@@ -172,7 +280,7 @@ class Polyhedron:
         if self.is_empty():
             return "∅"
         if self.is_universal():
-            return f'UNIV({self._vars})'
+            return f"UNIV({self._vars})"
         return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
         # return f'{{{", ".join(map(str, self._constraints))}}}'
 
@@ -194,6 +302,12 @@ class PolyhedronWithTime(Polyhedron):
             self._constraints.append(timevar <= bounds[1])
         if bounds[0] is not None or bounds[1] is not None:
             self._vars.add(timevar)
+
+    def bounds(self):
+        """
+        Return the time bounds
+        """
+        return self._bounds
 
     def substitute(self, S: dict, variables=None):
         return PolyhedronWithTime(
@@ -237,4 +351,4 @@ if __name__ == "__main__":
     print("----")
     P = Polyhedron([x + y <= 1, x - y <= 0, x >= 0, 0 <= y, y <= 1])
     print(P)
-    print(P.eliminate(y))
+    print(P.eliminate(y).simplify())

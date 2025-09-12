@@ -30,10 +30,10 @@ class PolyhedraList:
             other = PolyhedraList(other)
 
         print("FIXME: use ordering on lists")
-       #print("----")
-       #print([str(p) for p in self._phs])
-       #print([str(p) for p in other._phs])
-       #print("----")
+        # print("----")
+        # print([str(p) for p in self._phs])
+        # print([str(p) for p in other._phs])
+        # print("----")
         new_phs = []
         for lhs in self._phs:
             for rhs in other._phs:
@@ -43,11 +43,14 @@ class PolyhedraList:
 
         return PolyhedraList(*new_phs)
 
+    def complement(self):
+        raise NotImplementedError("Complement")
+
     def eliminate(self, var: Var):
         return PolyhedraList(*(p.eliminate(var) for p in self._phs))
 
-    def simplify(self):
-        return PolyhedraList(*(p.simplify() for p in self._phs))
+    def simplify(self, eq_break=True):
+        return PolyhedraList(*(p.simplify(eq_break) for p in self._phs))
 
     def vars(self):
         return set(v for ph in self._phs for v in ph.vars())
@@ -95,8 +98,7 @@ class Formula2Polyhedra:
 
     def translate(self, formula: Formula, trace):
         phl = self._translate(formula, trace, None)
-        return phl.simplify()
-
+        return phl.simplify(eq_break=False)
 
     def _new_var(self, name=None):
         if name:
@@ -180,7 +182,7 @@ class Formula2Polyhedra:
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
 
-    def _translate(self, formula: Formula, trace, var_bounds: dict):
+    def _translate(self, formula: Formula, trace, var_bounds: dict) -> PolyhedraList:
         """
         Translate a formula into a polyhedra list.
 
@@ -207,9 +209,9 @@ class Formula2Polyhedra:
             return phl.eliminate(qv)
         elif isinstance(formula, Not):
             # TODO
-            print("TODO: implement Not")
             f = self._translate(formula.children()[0], trace, var_bounds)
-            return f
+            print("TODO: bound the negated formula")
+            return f.complement()
         elif isinstance(formula, (LessThan, LessOrEqual)):
             assert len(chld) == 2, chld
             if isinstance(chld[0], TimeTerm):
