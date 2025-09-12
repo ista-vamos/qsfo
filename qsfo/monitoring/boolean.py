@@ -6,15 +6,18 @@ from sympy import Eq, LessThan
 
 class PolyhedraList:
     """
-    A set of polyhedra describing a part of the n-dimensional space.
-    The interpretation is the _union_ of all polyhedra.
+    A set of polyhedra describing a part of an n-dimensional space.
 
-    TODO: keep it sorted to optimize the operations
+    The interpretation is the _union_ of all polyhedra.
     """
 
     def __init__(self, *args):
-        assert all(isinstance(i, Polyhedron) for i in args), args
-        self._phs = list(args)
+        if len(args) == 1 and isinstance(args[0], list):
+            assert all(isinstance(i, Polyhedron) for i in args[0]), args
+            self._phs = args[0]
+        else:
+            assert all(isinstance(i, Polyhedron) for i in args), args
+            self._phs = list(args)
 
     def add(self, ph):
         self._phs.append(ph)
@@ -29,7 +32,7 @@ class PolyhedraList:
         if isinstance(other, Polyhedron):
             other = PolyhedraList(other)
 
-        print("FIXME: use ordering on lists")
+        # print("FIXME: use ordering on lists")
         # print("----")
         # print([str(p) for p in self._phs])
         # print([str(p) for p in other._phs])
@@ -37,6 +40,8 @@ class PolyhedraList:
         new_phs = []
         for lhs in self._phs:
             for rhs in other._phs:
+                if lhs.time_bounds().is_disjoint(rhs.time_bounds()):
+                    continue
                 ph = lhs.intersection(rhs)
                 if ph:
                     new_phs.append(ph)
@@ -44,7 +49,15 @@ class PolyhedraList:
         return PolyhedraList(*new_phs)
 
     def complement(self):
-        raise NotImplementedError("Complement")
+        print("TODO: make complement more efficient (use ordering)")
+        C = [ph.complement() for ph in self._phs]
+        assert len(C) > 0
+
+        res = PolyhedraList(C[0])
+        for i in range(1, len(C)):
+            res = res.intersection(PolyhedraList(C[i]))
+
+        return res
 
     def eliminate(self, var: Var):
         return PolyhedraList(*(p.eliminate(var) for p in self._phs))
@@ -63,6 +76,10 @@ class PolyhedraList:
 
     def __str__(self):
         return f'{{{", ".join(map(str, self._phs))}}}'
+
+
+class SortedPolyhedraList(PolyhedraList):
+    pass
 
 
 class FormulaPolyhedraList(PolyhedraList):

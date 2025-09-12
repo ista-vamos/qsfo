@@ -1,5 +1,39 @@
-from ..polyhedron import PolyhedronWithTime, Var
+from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval
 from sympy import Rational
+
+class TraceSegment(Polyhedron):
+    """
+    Polyhedron with explicit time variable that we use to represent
+    a segment of a piece-wise linear trace.
+    """
+
+    def __init__(
+        self,
+        timevar: Var,
+        constraints: list,
+        variables=None,
+        bounds: Interval = NO_BOUNDS,
+    ):
+        super().__init__(constraints, variables, bounds)
+        assert isinstance(bounds, Interval), bounds
+        self._timevar = timevar
+
+        if not bounds.is_left_unbounded:
+            self._constraints.append(timevar >= bounds.start)
+        if not bounds.is_right_unbounded:
+            self._constraints.append(timevar <= bounds.end)
+        if bounds != NO_BOUNDS:
+            self._vars.add(timevar)
+
+    def substitute(self, S: dict, variables=None):
+        return TraceSegment(
+            S.get(self._timevar, self._timevar),
+            self.substitute_constraints(S),
+            variables,
+            self._bounds,
+        )
+
+
 
 
 class PiecewiseTrace(list):
@@ -88,10 +122,10 @@ class SignalsTrace(list):
             b = Rational(last[varname]) - a * Rational(last[t])
             line = a * timevar + b
             sig.append(
-                PolyhedronWithTime(
+                TraceSegment(
                     timevar,
-                    (last[t], cur[t]),
                     constraints=[line - resvar <= 0, 0 <= line - resvar],
+                    bounds=Interval(last[t], cur[t]),
                 )
             )
             last = cur

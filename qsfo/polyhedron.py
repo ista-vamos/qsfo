@@ -1,9 +1,17 @@
 from itertools import product
 
-from sympy import symbols, Symbol, simplify, reduce_inequalities, And, false, true
+from sympy import symbols, Symbol, simplify, reduce_inequalities, And, false, true, Interval as SymPyInterval
 from sympy.core.numbers import Infinity, NegativeInfinity
 
 Var = Symbol
+
+class Interval(SymPyInterval):
+    def __new__(cls, start, end, lopen=False, ropen=False):
+        return SymPyInterval.__new__(cls, start, end, lopen, ropen)
+
+    def __str__(self):
+        return f'{"<" if self.left_open else "["}{self.start} .. {self.end}{">" if self.right_open else "]"}'
+
 
 
 def _break_eqs(C: list) -> list:
@@ -82,8 +90,12 @@ def get_bounds(C: list) -> dict:
 def remove_redundant_constraints(C: list) -> list:
     B = get_bounds(C)
     if not B:
-        return
+        return C
 
+    return _remove_redundant_constraints(C, B)
+
+
+def _remove_redundant_constraints(C: list, bounds: dict) -> list:
     new_C = []
     # add bounds for these variables to the constraints
     add_bounds_for = set()
@@ -95,15 +107,17 @@ def remove_redundant_constraints(C: list) -> list:
             new_C.append(term)
             continue
 
-        if lhs.is_symbol and lhs in B and rhs.is_constant:
+        if lhs.is_symbol and lhs in bounds and rhs.is_constant:
             # drop this term and add the bound instead
             add_bounds_for.add(lhs)
-        elif rhs.is_symbol and rhs in B and lhs.is_constant:
+        elif rhs.is_symbol and rhs in bounds and lhs.is_constant:
             # drop this term and add the bound instead
             add_bounds_for.add(rhs)
+        else:
+            new_C.append(term)
 
     for v in add_bounds_for:
-        l, u = B[v]
+        l, u = bounds[v]
         if l is not None:
             new_C.append(l <= v)
         if u is not None:
@@ -148,6 +162,32 @@ def complement_term(term):
         return [lhs < rhs]
 
 
+def solve_for_variable(to_reduce, var) -> list:
+    """
+    Solve inequalities for a single variable.
+    """
+    if not to_reduce:
+        return []
+
+    res = reduce_inequalities(to_reduce, var)
+    if isinstance(res, And):
+        C = [a for a in res.args]
+    else:
+        C = [res]
+
+    if false in C:
+        return false
+
+    if C == [true]:
+        return true
+
+    return C
+
+
+INFTY = float("inf")
+NEG_INFTY = float("-inf")
+NO_BOUNDS = Interval(NEG_INFTY, INFTY)
+
 class Polyhedron:
     """
     N-dimensional Polyhedron (bounded polytope).
@@ -155,11 +195,14 @@ class Polyhedron:
     `constraints` is a list of linear sympy polynomials.
     """
 
-    def __init__(self, constraints: list, variables=None):
+    def __init__(self, constraints: list, variables=None, bounds: Interval = NO_BOUNDS):
         # matrix of inequalities
         assert () not in constraints, constraints
+
         self._constraints = constraints
         self._vars = variables or set(v for c in constraints for v in c.atoms(Var))
+        # time bounds -- used to sort polyhedra during operations
+        self._bounds = bounds
 
     def vars(self):
         return self._vars
@@ -170,6 +213,9 @@ class Polyhedron:
     def is_universal(self):
         return self._vars and not self._constraints
 
+    def time_bounds(self):
+        return self._bounds
+
     def simplify(self, eq_break=True) -> "Polyhedron":
         if self.is_empty() or self.is_universal():
             return Polyhedron(self.constraints(), variables=self.vars())
@@ -178,21 +224,23 @@ class Polyhedron:
         if not C:
             # unsat constraints
             return Polyhedron([])
-        return Polyhedron(C, variables=self.vars())
+        return Polyhedron(C, variables=self.vars(), bounds=self._bounds)
 
     def intersection(self, rhs: "Polyhedron"):
-        print("FIXME: simplify and return empty/universal if possible")
+        # print("FIXME: simplify and return empty/universal if possible")
         # C = simplify_constraints(self._constraints + rhs._constraints)
         C = self._constraints + rhs._constraints
         if not C:
             # unsat constraints
             return Polyhedron([])
-        return Polyhedron(C, variables=self.vars().union(rhs.vars()))
+        return Polyhedron(C, variables=self.vars().union(rhs.vars()),
+                          bounds=self._bounds.intersect(rhs._bounds))
 
     def complement(self) -> list:
         """
         Return a list of Polyhedra that describe the complement of this polyhedron.
         """
+        print("FIXME: compute bounds on complemented polyhedra (at least for trace segments)")
         return [
             Polyhedron([cc], variables=self.vars())
             for c in self._constraints
@@ -217,15 +265,17 @@ class Polyhedron:
 
         # do the Fourier-Motzkin elimination
         lefts, rights = [], []
-        solved_for_var = break_eqs(
-            reduce_inequalities(to_reduce, var).args
-        )  # [term for ineq in break_eqs(to_reduce) for term in solve(ineq, var).args]
+        solved_for_var = solve_for_variable(to_reduce, var)
+        # [term for ineq in break_eqs(to_reduce) for term in solve(ineq, var).args]
         # print("S", solved_for_var)
-        if not solved_for_var:
+        if solved_for_var == false:
             # Inequalities have no solution
             return Polyhedron([], set())
+        if solved_for_var == true:
+            # Inequalities are universally satisfied
+            return Polyhedron([], self.vars())
 
-        for term in solved_for_var:
+        for term in break_eqs(solved_for_var):
             # these do not contribute to the result
             if term.has(Infinity) or term.has(NegativeInfinity):
                 continue
@@ -261,7 +311,7 @@ class Polyhedron:
         variables.remove(var)
         if do_simplify:
             constraints = simplify_constraints(constraints)
-        return Polyhedron(constraints, variables)
+        return Polyhedron(constraints, variables, bounds=self._bounds)
 
     def constraints(self):
         return self._constraints
@@ -281,38 +331,8 @@ class Polyhedron:
             return "∅"
         if self.is_universal():
             return f"UNIV({self._vars})"
-        return f'{{{", ".join(map(str, self._constraints))}}} in {self._vars}'
+        return f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._bounds}'
         # return f'{{{", ".join(map(str, self._constraints))}}}'
-
-
-class PolyhedronWithTime(Polyhedron):
-    """
-    Polyhedron with explicit bounds on the time variable.
-    """
-
-    def __init__(self, timevar: Var, bounds: tuple, constraints: list, variables=None):
-        super().__init__(constraints, variables)
-        assert isinstance(bounds, tuple), bounds
-        self._timevar = timevar
-        self._bounds = bounds
-
-        if bounds[0] is not None:
-            self._constraints.append(timevar >= bounds[0])
-        if bounds[1] is not None:
-            self._constraints.append(timevar <= bounds[1])
-        if bounds[0] is not None or bounds[1] is not None:
-            self._vars.add(timevar)
-
-    def bounds(self):
-        """
-        Return the time bounds
-        """
-        return self._bounds
-
-    def substitute(self, S: dict, variables=None):
-        return PolyhedronWithTime(
-            self._timevar, self._bounds, self.substitute_constraints(S), variables
-        )
 
 
 if __name__ == "__main__":
