@@ -199,7 +199,7 @@ class Polyhedron:
         # matrix of inequalities
         assert () not in constraints, constraints
 
-        self._constraints = constraints
+        self._constraints = set(constraints)
         self._vars = variables or set(v for c in constraints for v in c.atoms(Var))
         # time bounds -- used to sort polyhedra during operations
         self._bounds = bounds
@@ -325,6 +325,9 @@ class Polyhedron:
 
     def substitute(self, S: dict, variables=None):
         return Polyhedron(self.substitute_constraints(S), variables)
+
+    def __eq__(self, rhs: "Polyhedron") -> bool:
+        return self._vars == rhs._vars and self._constraints == rhs._constraints
 
     def __str__(self):
         if self.is_empty():
