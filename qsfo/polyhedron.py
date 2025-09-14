@@ -1,9 +1,19 @@
 from itertools import product
 
-from sympy import symbols, Symbol, simplify, reduce_inequalities, And, false, true, Interval as SymPyInterval
+from sympy import (
+    symbols,
+    Symbol,
+    simplify,
+    reduce_inequalities,
+    And,
+    false,
+    true,
+    Interval as SymPyInterval,
+)
 from sympy.core.numbers import Infinity, NegativeInfinity
 
 Var = Symbol
+
 
 class Interval(SymPyInterval):
     def __new__(cls, start, end, lopen=False, ropen=False):
@@ -11,7 +21,6 @@ class Interval(SymPyInterval):
 
     def __str__(self):
         return f'{"<" if self.left_open else "["}{self.start} .. {self.end}{">" if self.right_open else "]"}'
-
 
 
 def _break_eqs(C: list) -> list:
@@ -58,23 +67,28 @@ def get_bounds(C: list) -> dict:
     for term in C:
         op, lhs, rhs = term.rel_op, term.lhs, term.rhs
         if op == "==":
-            if lhs.is_symbol and rhs.is_constant:
+            if lhs.is_symbol and rhs.is_number:
                 ub.setdefault(lhs, []).append(rhs)
                 lb.setdefault(lhs, []).append(rhs)
                 # eqs.setdefault(lhs, []).append(rhs)
-            elif rhs.is_symbol and lhs.is_constant:
+            elif rhs.is_symbol and lhs.is_number:
                 ub.setdefault(rhs, []).append(lhs)
                 lb.setdefault(rhs, []).append(lhs)
                 # eqs.setdefault(rhs, []).append(lhs)
         elif op in ("<=", "<"):
-            if lhs.is_symbol and rhs.is_constant:
+            if lhs.is_symbol and rhs.is_number:
                 ub.setdefault(lhs, []).append(rhs)
-            elif rhs.is_symbol and lhs.is_constant:
+                lb.setdefault(lhs, []).append(rhs)
+                # eqs.setdefault(rhs, []).append(lhs)
+        elif op in ("<=", "<"):
+            if lhs.is_symbol and rhs.is_number:
+                ub.setdefault(lhs, []).append(rhs)
+            elif rhs.is_symbol and lhs.is_number:
                 lb.setdefault(rhs, []).append(lhs)
         elif op in (">=", ">"):
-            if lhs.is_symbol and rhs.is_constant:
+            if lhs.is_symbol and rhs.is_number:
                 lb.setdefault(lhs, []).append(rhs)
-            elif rhs.is_symbol and lhs.is_constant:
+            elif rhs.is_symbol and lhs.is_number:
                 ub.setdefault(rhs, []).append(lhs)
 
     bounds = {}
@@ -87,7 +101,7 @@ def get_bounds(C: list) -> dict:
     return bounds
 
 
-def remove_redundant_constraints(C: list) -> list:
+def remove_redundant_constraints(C) -> list:
     B = get_bounds(C)
     if not B:
         return C
@@ -96,7 +110,7 @@ def remove_redundant_constraints(C: list) -> list:
 
 
 def _remove_redundant_constraints(C: list, bounds: dict) -> list:
-    new_C = []
+    new_C = set()
     # add bounds for these variables to the constraints
     add_bounds_for = set()
     for term in C:
@@ -104,24 +118,24 @@ def _remove_redundant_constraints(C: list, bounds: dict) -> list:
         # if op not in ("==", "<=", ">=", "<", ">"):
         # NOTE: the strict inequalities are not handled here yet
         if op not in ("==", "<=", ">="):
-            new_C.append(term)
+            new_C.add(term)
             continue
 
-        if lhs.is_symbol and lhs in bounds and rhs.is_constant:
+        if lhs.is_symbol and lhs in bounds and rhs.is_number:
             # drop this term and add the bound instead
             add_bounds_for.add(lhs)
-        elif rhs.is_symbol and rhs in bounds and lhs.is_constant:
+        elif rhs.is_symbol and rhs in bounds and lhs.is_number:
             # drop this term and add the bound instead
             add_bounds_for.add(rhs)
         else:
-            new_C.append(term)
+            new_C.add(term)
 
     for v in add_bounds_for:
         l, u = bounds[v]
         if l is not None:
-            new_C.append(l <= v)
+            new_C.add(l <= v)
         if u is not None:
-            new_C.append(v <= u)
+            new_C.add(v <= u)
 
     return new_C
 
@@ -142,7 +156,7 @@ def simplify_constraints(C: list, eq_break=True):
         return remove_redundant_constraints(C)
     else:
         # simplified to a single expression
-        return [elems]
+        return set(elems)
 
 
 def complement_term(term):
@@ -188,6 +202,7 @@ INFTY = float("inf")
 NEG_INFTY = float("-inf")
 NO_BOUNDS = Interval(NEG_INFTY, INFTY)
 
+
 class Polyhedron:
     """
     N-dimensional Polyhedron (bounded polytope).
@@ -203,6 +218,9 @@ class Polyhedron:
         self._vars = variables or set(v for c in constraints for v in c.atoms(Var))
         # time bounds -- used to sort polyhedra during operations
         self._bounds = bounds
+        # on the first call of __str__, we cache the string (as constraints and variables do not change)
+        # this is to make str, but mainly __hash__ more efficient as __hash__ uses the string
+        self.__str = None
 
     def vars(self):
         return self._vars
@@ -229,18 +247,25 @@ class Polyhedron:
     def intersection(self, rhs: "Polyhedron"):
         # print("FIXME: simplify and return empty/universal if possible")
         # C = simplify_constraints(self._constraints + rhs._constraints)
-        C = self._constraints + rhs._constraints
+        C = self._constraints.copy()
+        C.update(rhs._constraints)
         if not C:
             # unsat constraints
             return Polyhedron([])
-        return Polyhedron(C, variables=self.vars().union(rhs.vars()),
-                          bounds=self._bounds.intersect(rhs._bounds))
+        C = remove_redundant_constraints(C)
+        return Polyhedron(
+            C,
+            variables=self.vars().union(rhs.vars()),
+            bounds=self._bounds.intersect(rhs._bounds),
+        )
 
     def complement(self) -> list:
         """
         Return a list of Polyhedra that describe the complement of this polyhedron.
         """
-        print("FIXME: compute bounds on complemented polyhedra (at least for trace segments)")
+        print(
+            "FIXME: compute bounds on complemented polyhedra (at least for trace segments)"
+        )
         return [
             Polyhedron([cc], variables=self.vars())
             for c in self._constraints
@@ -327,15 +352,27 @@ class Polyhedron:
         return Polyhedron(self.substitute_constraints(S), variables)
 
     def __eq__(self, rhs: "Polyhedron") -> bool:
+        # TODO: use __str too? It should work, right?
         return self._vars == rhs._vars and self._constraints == rhs._constraints
 
-    def __str__(self):
+    def __hash__(self) -> bool:
+        if not self.__str:
+            self.__create_str()
+        return hash(self.__str)
+
+    def __create_str(self):
         if self.is_empty():
-            return "∅"
-        if self.is_universal():
-            return f"UNIV({self._vars})"
-        return f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._bounds}'
-        # return f'{{{", ".join(map(str, self._constraints))}}}'
+            self.__str = "∅"
+        elif self.is_universal():
+            self.__str = f"UNIV({self._vars})"
+        else:
+            self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._bounds}'
+
+    def __str__(self):
+        if not self.__str:
+            self.__create_str()
+
+        return self.__str
 
 
 if __name__ == "__main__":

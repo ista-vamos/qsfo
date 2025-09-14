@@ -12,18 +12,20 @@ class PolyhedraList:
     """
 
     def __init__(self, *args):
-        if len(args) == 1 and isinstance(args[0], list):
+        if len(args) == 1 and isinstance(args[0], (list, set)):
             assert all(isinstance(i, Polyhedron) for i in args[0]), args
-            self._phs = args[0]
+            self._phs = set(args[0])
         else:
             assert all(isinstance(i, Polyhedron) for i in args), args
-            self._phs = list(args)
+            self._phs = set(args)
 
     def add(self, ph):
-        self._phs.append(ph)
+        self._phs.add(ph)
 
     def union(self, other: "PolyhedraList"):
-        return PolyhedraList(*(self._phs + other._phs))
+        C = self._phs.copy()
+        C.update(other._phs)
+        return PolyhedraList(C)
 
     def intersection(self, other):
         """
@@ -32,21 +34,21 @@ class PolyhedraList:
         if isinstance(other, Polyhedron):
             other = PolyhedraList(other)
 
-        # print("FIXME: use ordering on lists")
+        # print("FIXME: use ordering on sets")
         # print("----")
         # print([str(p) for p in self._phs])
         # print([str(p) for p in other._phs])
         # print("----")
-        new_phs = []
+        new_phs = set()
         for lhs in self._phs:
             for rhs in other._phs:
                 if lhs.time_bounds().is_disjoint(rhs.time_bounds()):
                     continue
                 ph = lhs.intersection(rhs)
                 if ph:
-                    new_phs.append(ph)
+                    new_phs.add(ph)
 
-        return PolyhedraList(*new_phs)
+        return PolyhedraList(new_phs)
 
     def complement(self):
         print("TODO: make complement more efficient (use ordering)")

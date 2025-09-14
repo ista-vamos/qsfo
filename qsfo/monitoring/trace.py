@@ -1,6 +1,7 @@
 from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval
 from sympy import Rational
 
+
 class TraceSegment(Polyhedron):
     """
     Polyhedron with explicit time variable that we use to represent
@@ -19,9 +20,9 @@ class TraceSegment(Polyhedron):
         self._timevar = timevar
 
         if not bounds.is_left_unbounded:
-            self._constraints.append(timevar >= bounds.start)
+            self._constraints.add(timevar >= bounds.start)
         if not bounds.is_right_unbounded:
-            self._constraints.append(timevar <= bounds.end)
+            self._constraints.add(timevar <= bounds.end)
         if bounds != NO_BOUNDS:
             self._vars.add(timevar)
 
@@ -32,8 +33,6 @@ class TraceSegment(Polyhedron):
             variables,
             self._bounds,
         )
-
-
 
 
 class PiecewiseTrace(list):
