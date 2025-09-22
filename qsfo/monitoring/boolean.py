@@ -1,7 +1,7 @@
-from qsfo.polyhedron import Var, Polyhedron
+from qsfo.polyhedron import Var, Polyhedron, Interval
 from qsfo.formula import *
 
-from sympy import Eq, LessThan
+from sympy import Eq
 
 
 class PolyhedraList:
@@ -12,12 +12,19 @@ class PolyhedraList:
     """
 
     def __init__(self, *args):
+        self._phs = set()
         if len(args) == 1 and isinstance(args[0], (list, set)):
-            assert all(isinstance(i, Polyhedron) for i in args[0]), args
-            self._phs = set(args[0])
+            self._add(args[0])
         else:
-            assert all(isinstance(i, Polyhedron) for i in args), args
-            self._phs = set(args)
+            self._add(args)
+
+    def _add(self, phs) -> None:
+        _phs = self._phs
+        for ph in phs:
+            assert isinstance(ph, Polyhedron), ph
+            if ph.is_empty():
+                continue
+            _phs.add(ph)
 
     def add(self, ph):
         self._phs.add(ph)
@@ -27,18 +34,20 @@ class PolyhedraList:
         C.update(other._phs)
         return PolyhedraList(C)
 
-    def intersection(self, other):
+    def intersection(self, other, ignore_variables=True):
         """
-        Intersect this polyhedra list with another polyhedra list or with a polyhedron
+        Intersect this polyhedra list with another polyhedra list or with a polyhedron.
+
+        :param ignore_variables:  if set to `True`, the operation assumes that any variable missing
+                                  in `self` or `other` is present and unconstraint. If set to `False`,
+                                  the intersection is strict: a missing variable means that there
+                                  is no intersection along that dimension and the whole intersection
+                                  is empty.
         """
         if isinstance(other, Polyhedron):
             other = PolyhedraList(other)
 
         # print("FIXME: use ordering on sets")
-        # print("----")
-        # print([str(p) for p in self._phs])
-        # print([str(p) for p in other._phs])
-        # print("----")
         new_phs = set()
         for lhs in self._phs:
             for rhs in other._phs:
@@ -50,9 +59,9 @@ class PolyhedraList:
 
         return PolyhedraList(new_phs)
 
-    def complement(self):
+    def complement(self, timevar=None):
         print("TODO: make complement more efficient (use ordering)")
-        C = [ph.complement() for ph in self._phs]
+        C = [ph.complement(timevar) for ph in self._phs]
         assert len(C) > 0
 
         res = PolyhedraList(C[0])
@@ -62,7 +71,13 @@ class PolyhedraList:
         return res
 
     def eliminate(self, var: Var):
-        return PolyhedraList(*(p.eliminate(var) for p in self._phs))
+        C = []
+        for x in self._phs:
+            x = x.eliminate(var)
+            # if x.is_universal():
+            #   continue
+            C.append(x)
+        return PolyhedraList(C)
 
     def simplify(self, eq_break=True):
         return PolyhedraList(*(p.simplify(eq_break) for p in self._phs))
@@ -113,11 +128,26 @@ class Formula2Polyhedra:
         self.__annon_vars_idx = 0
 
     def term(self, formula, trace, bounds):
-        return self._term(formula, trace, bounds)
+        t = self._term(formula, trace, bounds)
+        print("Translated")
+        print(formula)
+        print(t)
+        return t
 
     def translate(self, formula: Formula, trace):
-        phl = self._translate(formula, trace, None)
-        return phl.simplify(eq_break=False)
+        timevar = trace.timevar()
+        l, u = trace[0][timevar], trace[-1][timevar]
+        var_bounds = {Var(timevar): Interval(l, u)}
+        print('var_bounds', var_bounds)
+
+        phl = self._translate(formula, trace, var_bounds)
+
+        phl = phl.simplify(eq_break=False)
+        print("Translated")
+        print(formula)
+        print(phl)
+        print("-----")
+        return phl
 
     def _new_var(self, name=None):
         if name:
@@ -190,8 +220,8 @@ class Formula2Polyhedra:
                 for v in phl.vars():
                     B = bounds.get(v)
                     if B:
-                        applicable_bounds.append(B[0] <= v)
-                        applicable_bounds.append(v <= B[1])
+                        applicable_bounds.append(B.start <= v)
+                        applicable_bounds.append(v <= B.end)
 
                 if applicable_bounds:
                     phl = FormulaPolyhedraList(
@@ -225,12 +255,33 @@ class Formula2Polyhedra:
                 phl = phl.intersection(
                     self._create_ph(bounds[0] <= qv, qv <= bounds[1])
                 )
-            return phl.eliminate(qv)
+            print("Elim", qv, "\n", phl)
+            phl = phl.eliminate(qv)
+            print("Elim:", phl)
+            print("F", formula)
+            return phl
         elif isinstance(formula, Not):
             # TODO
             f = self._translate(formula.children()[0], trace, var_bounds)
-            print("TODO: bound the negated formula")
-            return f.complement()
+            bounds = []
+            phl = f.complement(Var(trace.timevar()))
+            if var_bounds:
+                for v in f.vars():
+                    B = var_bounds.get(v)
+                    if B is not None:
+                        bounds.append(B.start <= v)
+                        bounds.append(v <= B.end)
+
+            if bounds:
+                phl = phl.intersection(
+                    self._create_ph(*bounds)
+                )
+
+            print("Translated")
+            print(formula)
+            print(phl)
+            print("-----")
+            return phl
         elif isinstance(formula, (LessThan, LessOrEqual)):
             assert len(chld) == 2, chld
             if isinstance(chld[0], TimeTerm):
@@ -251,7 +302,12 @@ class Formula2Polyhedra:
             else:
                 raise NotImplementedError(f"Invalid comparison: {formula}")
 
-            return lhs.intersection(self._create_ph(cmp_term)).eliminate(lvar)
+            phl = lhs.intersection(self._create_ph(cmp_term)).eliminate(lvar)
+            print("Translated")
+            print(formula)
+            print(phl)
+            print("-----")
+            return phl
         elif isinstance(formula, Or):
             assert len(chld) == 2, chld
             return self._translate(chld[0], trace, var_bounds).union(
