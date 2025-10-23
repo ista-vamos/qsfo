@@ -1,7 +1,7 @@
 from os.path import dirname, join as pathjoin
 from sys import path as syspath
 
-syspath.append(pathjoin(dirname(__file__), ".."))
+syspath.append(pathjoin(dirname(__file__), "../.."))
 
 from qsfo.parser import Parser
 from qsfo.monitoring.trace import SignalsTrace
