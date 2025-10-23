@@ -3,7 +3,6 @@ import sys
 
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
-from qsfo.monitoring.boolean import Formula2Polyhedra
 from qsfo.polyhedron import simplify_constraints
 
 if __name__ == "__main__":
@@ -27,8 +26,17 @@ if __name__ == "__main__":
         print([str(p) for p in trace.piecewise_linear_signal(v)])
     print("--- ---")
 
-    f2ph = Formula2Polyhedra()
-    mon_signal = f2ph.translate(formula, trace)
-    print("Monitoring signal:")
-    for sig in mon_signal:
-        print(sig)
+    if sys.argv[0].startswith("bool"):
+        from qsfo.monitoring.boolean import Formula2Polyhedra
+        f2ph = Formula2Polyhedra()
+        mon_signal = f2ph.translate(formula, trace)
+        print("Monitoring signal:")
+        for sig in mon_signal:
+            print(sig)
+    else:
+        from qsfo.monitoring.quantitative import OfflineMonitor
+        mon = OfflineMonitor(formula, trace)
+        mon_signal = mon.signal(formula, trace)
+        print("Monitoring signal:")
+        for sig in mon_signal:
+            print(sig)
