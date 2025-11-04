@@ -7,10 +7,10 @@ from qsfo.polyhedron import *
 
 if __name__ == "__main__":
 
-    x = Var('x')
+    x = Var("x")
     c = x < 0
     assert c == (x < 0)
     assert Polyhedron([x < 0, x < 0, x < 0]) == Polyhedron([x < 0])
 
-    y = Var('y')
+    y = Var("y")
     assert Polyhedron([x < 0, x < 0, y >= 1, x < 0]) == Polyhedron([y >= 1, x < 0])

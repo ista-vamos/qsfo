@@ -14,21 +14,21 @@ if __name__ == "__main__":
     signal = SignalsTrace.from_list(
         [
             ["t", "f", "g"],
-            [ 0,   3,   6],
-            [ 1,   4,   7],
-            [ 2,   5,   8],
-           #[ 3,   4,   8],
-           #[ 4,   3,   8],
-            #[ 3,   5,   1],
+            [0, 3, 6],
+            [1, 4, 7],
+            [2, 5, 8],
+            # [ 3,   4,   8],
+            # [ 4,   3,   8],
+            # [ 3,   5,   1],
         ]
     )
     print(formula)
     print("Signal f:")
     for seg in signal.piecewise_linear_signal("f"):
-        print('  ', seg.time_bounds(), " ==> ", seg)
+        print("  ", seg.time_bounds(), " ==> ", seg)
     print("Signal g:")
     for seg in signal.piecewise_linear_signal("g"):
-        print('  ', seg.time_bounds(), " ==> ", seg)
+        print("  ", seg.time_bounds(), " ==> ", seg)
 
     mon_signal = Formula2Polyhedra().translate(formula, signal)
     print("Mon signal len: ", len(mon_signal))

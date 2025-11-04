@@ -26,9 +26,12 @@ class TraceSegment(Polyhedron):
         if bounds != NO_BOUNDS:
             self._vars.add(timevar)
 
-    def substitute(self, S: dict, variables=None):
+    def timevar(self):
+        return self._timevar
+
+    def substitute(self, S: dict, new_timevar=None, variables=None):
         return TraceSegment(
-            S.get(self._timevar, self._timevar),
+            new_timevar or self._timevar,
             self.substitute_constraints(S),
             variables,
             self.time_bounds(),

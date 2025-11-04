@@ -138,7 +138,7 @@ class Formula2Polyhedra:
         timevar = trace.timevar()
         l, u = trace[0][timevar], trace[-1][timevar]
         var_bounds = {Var(timevar): Interval(l, u)}
-        print('var_bounds', var_bounds)
+        print("var_bounds", var_bounds)
 
         phl = self._translate(formula, trace, var_bounds)
 
@@ -273,9 +273,7 @@ class Formula2Polyhedra:
                         bounds.append(v <= B.end)
 
             if bounds:
-                phl = phl.intersection(
-                    self._create_ph(*bounds)
-                )
+                phl = phl.intersection(self._create_ph(*bounds))
 
             print("Translated")
             print(formula)

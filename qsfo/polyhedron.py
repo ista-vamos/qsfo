@@ -253,6 +253,7 @@ class Polyhedron:
         self._vars = variables or set(
             v for c in self._constraints for v in c.atoms(Var)
         )
+        assert all(isinstance(v, Symbol) for v in self._vars), self._vars
         assert (
             not self._constraints or self._vars
         ), f"Have constraints but no vars: {self}"

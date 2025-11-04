@@ -28,6 +28,7 @@ if __name__ == "__main__":
 
     if sys.argv[0].startswith("bool"):
         from qsfo.monitoring.boolean import Formula2Polyhedra
+
         f2ph = Formula2Polyhedra()
         mon_signal = f2ph.translate(formula, trace)
         print("Monitoring signal:")
@@ -35,6 +36,7 @@ if __name__ == "__main__":
             print(sig)
     else:
         from qsfo.monitoring.quantitative import OfflineMonitor
+
         mon = OfflineMonitor(formula, trace)
         mon_signal = mon.signal(formula, trace)
         print("Monitoring signal:")
