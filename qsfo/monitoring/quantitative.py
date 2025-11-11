@@ -132,8 +132,16 @@ class OnlineMonitor:
             op: str = formula.op()
             if op in ("+", "-"):
                 assert len(formula.children()) == 2, formula
-                lhs: FormulaPolyhedraList = self.term(formula.children()[0])
-                rhs: FormulaPolyhedraList = self.term(formula.children()[1])
+
+                # simplify adding/substracting 0
+                children = formula.children()
+                if isinstance(children[0], Constant) and children[0].value() == 0:
+                    return self.term(children[1])
+                elif isinstance(children[1], Constant) and children[1].value() == 0:
+                    return self.term(children[0])
+
+                lhs: FormulaPolyhedraList = self.term(children[0])
+                rhs: FormulaPolyhedraList = self.term(children[1])
                 assert lhs is not None, formula
                 assert rhs is not None, formula
                 assert len(lhs) > 0, lhs
@@ -313,7 +321,6 @@ class OfflineMonitor:
             segment: dict[str, TraceSegment] = {
                 name: piecewise_signals[name][n] for name in signal_names
             }
-            print('SEGMENT', segment)
             # the time interval is the same for all signal, so just take one signal
             time_interval: TraceSegment = piecewise_signals[signal_names[0]][n]
             time_interval: Polyhedron = time_interval.time_bounds_as_ph().substitute(
