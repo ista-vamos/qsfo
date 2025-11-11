@@ -1,5 +1,5 @@
 from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval
-from sympy import Rational
+from sympy import Rational, Eq
 
 
 class TraceSegment(Polyhedron):
@@ -18,24 +18,47 @@ class TraceSegment(Polyhedron):
         super().__init__(constraints, variables, bounds)
         assert isinstance(bounds, Interval), bounds
         self._timevar = timevar
+        self._time_bounds = bounds
 
         if not bounds.is_left_unbounded:
-            self._constraints.add(timevar >= bounds.start)
+            self._constraints.add(
+                timevar > bounds.start if bounds.left_open else timevar >= bounds.start
+            )
         if not bounds.is_right_unbounded:
-            self._constraints.add(timevar <= bounds.end)
+            self._constraints.add(
+                timevar < bounds.end if bounds.right_open else timevar <= bounds.end
+            )
         if bounds != NO_BOUNDS:
             self._vars.add(timevar)
 
     def timevar(self):
         return self._timevar
 
+    def time_bounds_as_ph(self) -> Polyhedron:
+        C = []
+        bounds = self._time_bounds
+        timevar = self._timevar
+        if not bounds.is_left_unbounded:
+            C.append(
+                timevar > bounds.start if bounds.left_open else timevar >= bounds.start
+            )
+        if not bounds.is_right_unbounded:
+            C.append(
+                timevar < bounds.end if bounds.right_open else timevar <= bounds.end
+            )
+
+        return Polyhedron(C, set((self.timevar(),)), self._time_bounds)
+
     def substitute(self, S: dict, new_timevar=None, variables=None):
-        return TraceSegment(
+        print("S", self, S)
+        n = TraceSegment(
             new_timevar or self._timevar,
             self.substitute_constraints(S),
             variables,
             self.time_bounds(),
         )
+        print("  ", n)
+        return n
 
 
 class PiecewiseTrace(list):
@@ -112,8 +135,8 @@ class SignalsTrace(list):
         represented as a sequence of timed polyhedra.
         """
         t = self._header[0]
-        timevar = Var(t)
-        resvar = Var(varname)
+        timevar = Var(f"t_{varname}")
+        resvar = Var(f"v_{varname}")
         N = len(self)
 
         sig = PiecewiseTrace(timevar, resvar, [])
@@ -126,8 +149,8 @@ class SignalsTrace(list):
             sig.append(
                 TraceSegment(
                     timevar,
-                    constraints=[line - resvar <= 0, 0 <= line - resvar],
-                    bounds=Interval(last[t], cur[t]),
+                    constraints=[Eq(line - resvar, 0)],
+                    bounds=Interval(last[t], cur[t], ropen=True),
                 )
             )
             last = cur

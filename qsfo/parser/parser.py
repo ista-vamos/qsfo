@@ -11,7 +11,15 @@ class AstTransformer(Transformer):
 
     def timeadd(self, items):
         assert len(items) == 2, items
+        assert isinstance(items[0], TimeTerm), items
+        assert isinstance(items[1], TimeTerm), items
         return TimeOp("+", items[0], items[1])
+
+    def timesub(self, items):
+        assert len(items) == 2
+        assert isinstance(items[0], TimeTerm), items
+        assert isinstance(items[1], TimeTerm), items
+        return TimeOp("-", items[0], items[1])
 
     def timeconst(self, items):
         assert len(items) == 1

@@ -1,4 +1,5 @@
-from sympy import Rational, Symbol, Abs
+from sympy import Rational, Abs
+from qsfo.polyhedron import Var
 
 
 class Formula:
@@ -225,7 +226,7 @@ class TimeVar(TimeTerm):
 
     def expr(self):
         # XXX: we might want to cache these
-        return Symbol(self._name)
+        return Var(self._name)
 
     def __hash__(self):
         return hash(self.name())
@@ -285,7 +286,7 @@ class ValueVar(ValueTerm):
 
     def expr(self):
         # XXX: we might want to cache these
-        return Symbol(self._name)
+        return Var(self._name)
 
     def __hash__(self):
         return hash(self.name())

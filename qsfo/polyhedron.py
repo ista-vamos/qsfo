@@ -16,7 +16,11 @@ from sympy import (
 )
 from sympy.core.numbers import Infinity, NegativeInfinity
 
-Var = Symbol
+from qsfo.dbg import trace_calls
+
+
+class Var(Symbol):
+    pass
 
 
 class Interval(SymPyInterval):
@@ -44,6 +48,33 @@ def _break_eqs(C: list) -> list:
 def break_eqs(C):
     # NOTE: return a list so that we can check for the emptiness
     return list(_break_eqs(C))
+
+
+def infer_eqs(C):
+    """
+    Merge a <= b, b <= a to a == b
+    """
+    new_C = []
+    seen = set()
+    eqs = set()
+    for c in C:
+        if c.rel_op in ("==", "<", ">"):
+            new_C.append(c)  # strict ineq
+            continue
+        # if not isinstance(c, (Le, Lt, Ge, Gt)):
+        #    new_c.append(c)
+        assert c.rel_op in ("<=", ">="), c
+        c = to_le(c)
+
+        lhs, rhs = c.lhs, c.rhs
+        if (rhs, lhs) in seen:
+            eqs.add((rhs, lhs))
+        else:
+            seen.add((lhs, rhs))
+
+    seen = seen.difference(eqs)
+
+    return [(Eq(rhs, lhs)) for rhs, lhs in eqs] + [lhs <= rhs for lhs, rhs in seen]
 
 
 def to_le(term):
@@ -145,7 +176,7 @@ def _remove_redundant_constraints(C: list, bounds: dict) -> list:
     return new_C
 
 
-def simplify_constraints(C: list, eq_break=True):
+def simplify_constraints(C: list):
     expr = simplify(And(*C))
     elems = expr.args
     if expr == false:
@@ -154,19 +185,17 @@ def simplify_constraints(C: list, eq_break=True):
     assert elems != (), (elems, expr, type(expr))
 
     if isinstance(expr, And):
-        if eq_break:
-            C = [c for e in expr.args for c in break_eqs((e,))]
-        else:
-            C = list(expr.args)
-        return C  # remove_redundant_constraints(C)
+        # if eq_break:
+        #    C = [c for e in expr.args for c in break_eqs((e,))]
+        # else:
+        return list(expr.args)
     elif isinstance(expr, Eq):
-        if eq_break:
-            return [LessThan(elems[0], elems[1]), LessThan(elems[1], elems[0])]
-        else:
-            return [expr]
+        # if eq_break:
+        #    return [LessThan(elems[0], elems[1]), LessThan(elems[1], elems[0])]
+        return [expr]
     else:
         # simplified to a single expression
-        return set(elems)
+        return list(elems)
 
 
 def complement_term(term, timevar, time_bounds):
@@ -259,10 +288,15 @@ class Polyhedron:
         ), f"Have constraints but no vars: {self}"
 
     def _add_constraints(self, constraints):
-        # do not add constraints that bound the polyhedron by a constant directly.
-        # Rather gather the constraints and add only the resulting constraints instead of all of them
+        # Gather constraints that bound the polyhedron by a constant.
+        # Do not add them directly. Rather gather all of them first in a set
+        # add only the intersected constraints at the end.
         bounds = {}  # self._bounds
         for c in constraints:
+            if c == True:
+                continue
+            elif c == False:
+                return False
             sym, B = _get_bounds(c)
             if sym is not None:
                 B = bounds.get(sym, NO_BOUNDS).intersect(B)
@@ -302,12 +336,12 @@ class Polyhedron:
     def time_bounds(self):
         return self._time_bounds
 
-    def simplify(self, eq_break=True) -> "Polyhedron":
+    def simplify(self) -> "Polyhedron":
         if self.is_empty() or self.is_universal():
             # do not return `self`, return a copy
             return Polyhedron(self.constraints(), variables=self.vars())
 
-        C = simplify_constraints(self._constraints, eq_break)
+        C = simplify_constraints(self._constraints)
         if not C:
             # unsat constraints
             return Polyhedron([])
@@ -327,6 +361,9 @@ class Polyhedron:
         """
         # TODO: cache a hash of `_vars` to make this comparison more efficient?
         if not ignore_variables and self.vars() != rhs.vars():
+            return Polyhedron([])
+
+        if rhs.is_empty() or self.is_empty():
             return Polyhedron([])
 
         # print("FIXME: simplify and return empty/universal if possible")
@@ -360,7 +397,8 @@ class Polyhedron:
             for cc in complement_term(c, timevar, self._time_bounds)
         ]
 
-    def eliminate(self, var: Var, do_simplify=False):
+    @trace_calls
+    def eliminate(self, var: Var, do_simplify=False, restore_eqs=False):
         """
         Eliminate the variable `var` from this polyhedron.
         We use Fourier-Motzkin elimination for now.
@@ -424,6 +462,8 @@ class Polyhedron:
         variables.remove(var)
         if do_simplify:
             constraints = simplify_constraints(constraints)
+        if restore_eqs:
+            constraints = infer_eqs(constraints)
         return Polyhedron(constraints, variables, time_bounds=self._time_bounds)
 
     def constraints(self):
