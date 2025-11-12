@@ -20,6 +20,9 @@ class TraceSegment(Polyhedron):
         self._timevar = timevar
         self._time_bounds = bounds
 
+    def connstraint_by_time_bounds(self) -> "TraceSegment":
+        bounds = self._time_bounds
+        timevar = self._timevar
         if not bounds.is_left_unbounded:
             self._constraints.add(
                 timevar > bounds.start if bounds.left_open else timevar >= bounds.start
@@ -30,6 +33,8 @@ class TraceSegment(Polyhedron):
             )
         if bounds != NO_BOUNDS:
             self._vars.add(timevar)
+
+        return self
 
     def timevar(self):
         return self._timevar
@@ -50,14 +55,12 @@ class TraceSegment(Polyhedron):
         return Polyhedron(C, set((self.timevar(),)), self._time_bounds)
 
     def substitute(self, S: dict, new_timevar=None, variables=None):
-        print("S", self, S)
         n = TraceSegment(
             new_timevar or self._timevar,
             self.substitute_constraints(S),
             variables,
             self.time_bounds(),
         )
-        print("  ", n)
         return n
 
 
@@ -151,7 +154,7 @@ class SignalsTrace(list):
                     timevar,
                     constraints=[Eq(line - resvar, 0)],
                     bounds=Interval(last[t], cur[t], ropen=True),
-                )
+                ).connstraint_by_time_bounds()
             )
             last = cur
         return sig

@@ -1,9 +1,10 @@
 from itertools import product
+import ppl
 
 from sympy import (
     symbols,
     Symbol,
-    simplify,
+    simplify as sympy_simplify,
     reduce_inequalities,
     And,
     false,
@@ -12,7 +13,12 @@ from sympy import (
     FiniteSet,
     EmptySet,
     Eq,
+    Le,
+    Ge,
+    Lt,
+    Gt,
     LessThan,
+    fraction,
 )
 from sympy.core.numbers import Infinity, NegativeInfinity
 
@@ -119,8 +125,6 @@ def get_bounds(C: list) -> dict:
 
     The function could be done more efficient (not storing the lists of values, but computing
     min/max on the fly), but we'll see if it is necessary.
-
-    TODO: use Interval from sympy, to handle also strict inequalities
     """
     # eqs = {}
     bounds = {}
@@ -135,6 +139,7 @@ def get_bounds(C: list) -> dict:
 
 
 def remove_redundant_constraints(C) -> list:
+    raise RuntimeError("This might be buggy")
     B = get_bounds(C)
     if not B:
         return C
@@ -177,7 +182,7 @@ def _remove_redundant_constraints(C: list, bounds: dict) -> list:
 
 
 def simplify_constraints(C: list):
-    expr = simplify(And(*C))
+    expr = sympy_simplify(And(*C))
     elems = expr.args
     if expr == false:
         return []
@@ -196,6 +201,54 @@ def simplify_constraints(C: list):
     else:
         # simplified to a single expression
         return list(elems)
+
+
+def sympy_to_ppl_constraint(sympy_expr, variables):
+    """
+    Convert a SymPy linear inequality (Le, Ge, Lt, Gt) to a ppl.Constraint
+
+    `variables` is a list of (sympy var, PPL var) tuples and `var_map`
+    is a mapping made from this list.
+    """
+    expr = sympy_expr.lhs - sympy_expr.rhs  # move all terms to LHS
+    # make the coefficients integers
+    expr, _ = fraction(expr.together())
+
+    # Extract coefficients
+    coeff_dict = expr.as_coefficients_dict()
+    constant = int(coeff_dict.get(1, 0))
+
+    # Create PPL expression
+    coeffs = {pplv.id(): int(coeff_dict.get(v, 0)) for v, pplv in variables}
+    expr = ppl.Linear_Expression(coeffs, constant)
+
+    # Restore the inequality
+    if isinstance(sympy_expr, Le):
+        return ppl.Constraint(expr <= 0)
+    elif isinstance(sympy_expr, Ge):
+        return ppl.Constraint(expr >= 0)
+    elif isinstance(sympy_expr, Lt):
+        return ppl.Constraint(expr < 0)
+    elif isinstance(sympy_expr, Gt):
+        return ppl.Constraint(expr > 0)
+    elif isinstance(sympy_expr, Eq):
+        return ppl.Constraint(expr == 0)
+
+    raise ValueError(f"Unsupported SymPy inequality type: {sympy_expr}")
+
+
+def ppl_constraint_to_sympy(ppl_c, variables):
+    monomials = [
+        c * v for (c, (v, _)) in zip(ppl_c.coefficients(), variables) if c != 0
+    ]
+    lhs = sum(monomials) + ppl_c.inhomogeneous_term()
+    if ppl_c.is_strict_inequality():
+        return lhs > 0
+    if ppl_c.is_equality():
+        return Eq(lhs, 0)
+
+    assert ppl_c.is_nonstrict_inequality(), ppl_c
+    return lhs >= 0
 
 
 def complement_term(term, timevar, time_bounds):
@@ -287,6 +340,8 @@ class Polyhedron:
             not self._constraints or self._vars
         ), f"Have constraints but no vars: {self}"
 
+        #self.reduce()
+
     def _add_constraints(self, constraints):
         # Gather constraints that bound the polyhedron by a constant.
         # Do not add them directly. Rather gather all of them first in a set
@@ -336,7 +391,7 @@ class Polyhedron:
     def time_bounds(self):
         return self._time_bounds
 
-    def simplify(self) -> "Polyhedron":
+    def simplify_constraints(self) -> "Polyhedron":
         if self.is_empty() or self.is_universal():
             # do not return `self`, return a copy
             return Polyhedron(self.constraints(), variables=self.vars())
@@ -366,8 +421,6 @@ class Polyhedron:
         if rhs.is_empty() or self.is_empty():
             return Polyhedron([])
 
-        # print("FIXME: simplify and return empty/universal if possible")
-        # C = simplify_constraints(self._constraints + rhs._constraints)
         C = self._constraints.copy()
         C.update(rhs._constraints)
         # C = remove_redundant_constraints(C)
@@ -396,6 +449,17 @@ class Polyhedron:
             for c in self._constraints
             for cc in complement_term(c, timevar, self._time_bounds)
         ]
+
+    @trace_calls
+    def eliminate_ppl(self, elim_vars: list[Var]):
+        raise NotImplementedError()
+        poly, variables = self.to_ppl_polyhedron()
+        print(f"Elim {elim_vars} from {poly.constraints()}")
+        print(dir(poly))
+        poly = poly.existentially_quantify(elim_vars)
+        print(f" ==> {poly.constraints()}")
+
+        return Polyhedron.from_ppl_polyhedron(poly, variables)
 
     @trace_calls
     def eliminate(self, var: Var, do_simplify=False, restore_eqs=False):
@@ -446,10 +510,12 @@ class Polyhedron:
                 assert t_lhs.rhs == t_rhs.lhs == var, (var, t_lhs, t_rhs)
 
                 if t_lhs.rel_op == "<" or t_rhs.rel_op == "<":
-                    term = simplify(t_lhs.lhs < t_rhs.rhs)
+                    term = t_lhs.lhs < t_rhs.rhs
+                    # term = simplify(t_lhs.lhs < t_rhs.rhs)
                 else:
                     assert t_lhs.rel_op == t_rhs.rel_op == "<=", (t_lhs, t_rhs)
-                    term = simplify(t_lhs.lhs <= t_rhs.rhs)
+                    term = t_lhs.lhs <= t_rhs.rhs
+                    # term = simplify(t_lhs.lhs <= t_rhs.rhs)
                 if term == True:
                     continue
                 if term == False:
@@ -468,6 +534,63 @@ class Polyhedron:
 
     def constraints(self):
         return self._constraints
+
+    def to_ppl_polyhedron(self) -> tuple["Polyhedron", list]:
+        """ """
+        # FIXME: return empty PPL poly
+        if self.is_empty():
+            return None, []
+
+        vars_num = len(self.vars())
+        # fix order of variables and create PPL variables for them
+        variables = [(v, ppl.Variable(n)) for n, v in enumerate(self.vars())]
+        # create a mapping for efficient lookup
+        var_map = {v: pplv for v, pplv in variables}
+        C = ppl.Constraint_System()
+        for c in self._constraints:
+            ppl_c = sympy_to_ppl_constraint(c, variables)
+            C.insert(ppl_c)
+
+        poly = ppl.NNC_Polyhedron(C)
+        if poly.is_empty():
+            return None, []
+
+        return poly, variables
+
+    @staticmethod
+    def from_ppl_polyhedron(poly, variables):
+        return Polyhedron(
+            [ppl_constraint_to_sympy(c, variables) for c in poly.constraints()]
+        )
+
+    def reduce(self) -> "Polyhedron":
+        """
+        This is **in-place** operation, make sure to copy the polyhedron
+        if this one cannot be modified.
+        """
+        if self.is_empty():
+            return self
+
+        P, variables = self.to_ppl_polyhedron()
+        if P is None:
+            self._vars = set()
+            self._constraints = set()
+            return self
+
+        if P.is_universe():
+            self._constraints = set()
+            assert self._vars, "We must have variables.."
+            return self
+
+        # update the constraints and variables
+        self._constraints = {
+            ppl_constraint_to_sympy(c, variables) for c in P.constraints()
+        }
+        self._vars = set(v for c in self._constraints for v in c.atoms(Var))
+
+        assert self._constraints or self._vars, "The Polyhedron must be non-empty"
+
+        return self
 
     def substitute_constraints(self, S: dict) -> list:
         """

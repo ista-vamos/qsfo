@@ -1,6 +1,8 @@
 from sympy import Rational, Abs
 from qsfo.polyhedron import Var
 
+from ppl import Variable as PPLVariable
+
 
 class Formula:
 

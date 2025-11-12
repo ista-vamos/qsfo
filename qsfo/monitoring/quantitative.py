@@ -1,9 +1,9 @@
 from qsfo.formula import *
 from qsfo.monitoring.trace import TraceSegment
 from qsfo.monitoring.polyhedralist import FormulaPolyhedraList, PolyhedraList
-from qsfo.polyhedron import Var, Polyhedron, INFTY, NEG_INFTY
-from sympy import simplify, And, Eq
-from qsfo.dbg import trace_calls
+from qsfo.polyhedron import Var, Polyhedron, INFTY, NEG_INFTY, solve_for_variable
+from sympy import And, Eq
+from qsfo.dbg import trace_calls, add_to_trace
 
 
 class OnlineMonitor:
@@ -67,13 +67,13 @@ class OnlineMonitor:
 
         # compute current contstraints on variables
         # P = self._P_dom.intersection(time_interval)
-        P_seg = self._P_dom.intersection(time_interval).simplify()
+        P_seg = self._P_dom.intersection(time_interval)  # .simplify()
 
         # compute the monitoring signal and update the list of
         # known polyhedra, i.e., this call modifies `self._polyhedra`
         res = self.formula_robust(self._formula, P_seg)
 
-        return res.var(), res
+        return res.var(), res.reduce()
 
     @trace_calls
     def formula_robust(self, formula, P_seg) -> FormulaPolyhedraList:
@@ -99,9 +99,8 @@ class OnlineMonitor:
         elif isinstance(formula, (LessThan, LessOrEqual)):
             term = ValueOp("-", chld[1], chld[0])
             term = self.term(term)
-            # TODO: remove the `simplify` if it takes too much time. It is nice mainly for debugging
             return FormulaPolyhedraList(
-                term.var(), *term.intersection(P_seg).simplify()
+                term.var(), *term.intersection(P_seg).reduce()
             )
         # elif isinstance(formula, Or):
         #    P1, sig1 = self.formula_robust(chld[0], P)
@@ -136,8 +135,17 @@ class OnlineMonitor:
                 # simplify adding/substracting 0
                 children = formula.children()
                 if isinstance(children[0], Constant) and children[0].value() == 0:
-                    return self.term(children[1])
+                    # 0 on the left can be ignored for addition
+                    if op == "+":
+                        return self.term(children[1])
+                    else:
+                        # otherwise we negate the value of the subterm
+                        lhs = self.term(children[1])
+                        return FormulaPolyhedraList(
+                            resvar, *lhs, Eq(resvar, -lhs.var())
+                        )
                 elif isinstance(children[1], Constant) and children[1].value() == 0:
+                    # 0 on the right can be ignored for addition and substraction
                     return self.term(children[0])
 
                 lhs: FormulaPolyhedraList = self.term(children[0])
@@ -169,7 +177,6 @@ class OnlineMonitor:
             # get the list of segments for the given signal
             segments: list[TraceSegment] = [elem[sig] for elem in self._signal]
             # XXX: we assume that the output of the signal is named 'v_{sig}'
-            # as the signal itself
             segments = [
                 seg.substitute(
                     {seg.timevar(): time_term.expr(), Var(f"v_{sig}"): resvar},
@@ -177,10 +184,7 @@ class OnlineMonitor:
                 )
                 for seg in segments
             ]
-            # XXX: the `simplify` takes quite some time..
-            # segments = PolyhedraList([seg.substitute({seg.timevar(): time_term.expr()}) for seg in segments]).simplify()
-            # for seg in segments:
-            #    print('S', str(seg))
+            #add_to_trace('segments', *segments)
             return FormulaPolyhedraList(resvar, *segments)
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
@@ -197,75 +201,89 @@ class OnlineMonitor:
             Q = self.parametric_lp_maximize(P_I, v, x, v_new)
             P_res = P_res.union(Q)
 
-        return FormulaPolyhedraList(v_new, *(P_res.simplify()))
+        return FormulaPolyhedraList(v_new, *(P_res.eliminate(v)))
 
     @trace_calls
     def parametric_lp_maximize(
         self, P: Polyhedron, v: Var, x: Var, v_new: Var
     ) -> FormulaPolyhedraList:
         assert isinstance(P, Polyhedron), (P, type(P))
+
         alpha, beta = split_coeff(P, v, x)
-        #print("alpha, beta", alpha, beta)
         L, U, P_0 = isolate_bounds(P, x)
-        #print("L, U, P_0", L, U, P_0)
         P_Y = P.eliminate(x)
-        #print("P_Y", P_Y)
         G_pos = P_0.intersection(Polyhedron([alpha > 0], variables=P_0.vars()))
         G_neg = P_0.intersection(Polyhedron([alpha < 0], variables=P_0.vars()))
         G_zero = P_0.intersection(Polyhedron([Eq(alpha, 0)], variables=P_0.vars()))
-        #print("G_pos", G_pos)
-        #print("G_neg", G_neg)
-        #print("G_zero", G_zero)
         Q = PolyhedraList()
 
         if not G_pos.is_empty():
             if not U:
-                Q.add(
-                    G_pos.intersection(P_Y).intersection(Polyhedron([Eq(v_new, INFTY)]))
+                q = (
+                    G_pos.intersection(P_Y)
+                    .intersection(Polyhedron([Eq(v_new, 9999999)]))
+                    .reduce()
                 )
+                if not q.is_empty():
+                    Q.add(q)
             else:
                 for u in U:
                     A_u = Polyhedron([(u <= un) for un in U])
                     F_u = Polyhedron([(l <= u) for l in L])
-                    Q.add(
+                    q = (
                         G_pos.intersection(A_u)
                         .intersection(F_u)
                         .intersection(P_Y)
                         .intersection(Polyhedron([Eq(v_new, alpha * u + beta)]))
-                    )
+                    ).reduce()
+                    Q.add(q)
 
         if not G_neg.is_empty():
             if not L:
-                Q.append(
-                    G_neg.intersection(P_Y).intersection(Polyhedron([Eq(v_new, INFTY)]))
+                q = (
+                    G_neg.intersection(P_Y)
+                    .intersection(Polyhedron([Eq(v_new, 9999999)]))
+                    .reduce()
                 )
+                Q.append(q)
             else:
                 for l in L:
                     A_l = Polyhedron([(l >= ln) for ln in L])
                     F_l = Polyhedron([(l <= u) for u in U])
-                    Q.add(
+                    q = (
                         G_neg.intersection(A_l)
                         .intersection(F_l)
                         .intersection(P_Y)
                         .intersection(Polyhedron([Eq(v_new, alpha * l + beta)]))
-                    )
+                    ).reduce()
+                    Q.add(q)
 
         if not G_zero.is_empty():
-            Q.add(
-                G_zero.intersection(P_Y).intersection(Polyhedron([Eq(v_new, beta)]))
+            q = (
+                G_zero.intersection(P_Y)
+                .intersection(Polyhedron([Eq(v_new, beta)]))
+                .reduce()
             )
+            Q.add(q)
 
-        Q.add(P_0.intersection(self.negate(P_Y, v)).intersection(Polyhedron([Eq(v_new, INFTY)])))
+        q = (
+            PolyhedraList(P_Y.complement())
+            .intersection(P_0)
+            .intersection(Polyhedron([Eq(v_new, -9999999)]))
+            .reduce()
+        )
+        if not q:
+            Q.union(q)
 
         return Q
 
 
+@trace_calls
 def split_coeff(P, v, x):
     # take the polyhedron and get the expression that defines `v`
-    exprs = [constr for constr in P.constraints() if constr.has(v)]
-    assert len(exprs) == 1, (P, exprs)
+    exprs = [constr for constr in P.constraints() if constr.has(v) and isinstance(constr, Eq)]
+    assert len(exprs) == 1, f"{exprs}, v={v}"
     expr = exprs[0]
-    assert isinstance(expr, Eq), expr
 
     # rewrite the expression such that coeff. of `v` is -1, so that we have
     # `-v + RHS == 0`. Then add `v` to get RHS.
@@ -280,6 +298,7 @@ def split_coeff(P, v, x):
     return alpha, beta
 
 
+@trace_calls
 def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
     L, U, P_0 = [], [], []
     for expr in P.constraints():

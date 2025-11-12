@@ -24,12 +24,18 @@ class PolyhedraList:
             _phs.add(ph)
 
     def add(self, ph: Polyhedron):
-        self._phs.add(ph)
+        if not ph.is_empty():
+            self._phs.add(ph)
 
     def union(self, other: "PolyhedraList") -> "PolyhedraList":
         C = self._phs.copy()
         C.update(other._phs)
         return PolyhedraList(C)
+
+    def reduce(self) -> "PolyhedraList":
+        return PolyhedraList(
+            *(ph for ph in (p.reduce() for p in self) if not ph.is_empty())
+        )
 
     def intersection(self, other, ignore_variables=True) -> "PolyhedraList":
         """
@@ -48,13 +54,11 @@ class PolyhedraList:
         new_phs = set()
         for lhs in self._phs:
             for rhs in other._phs:
-                if lhs.time_bounds().is_disjoint(rhs.time_bounds()):
-                    continue
                 ph = lhs.intersection(rhs, ignore_variables)
                 if ph:
                     new_phs.add(ph)
 
-        return PolyhedraList(new_phs)
+        return PolyhedraList(new_phs).reduce()
 
     def complement(self, timevar: Var = None) -> "PolyhedraList":
         print("TODO: make complement more efficient (use ordering)")

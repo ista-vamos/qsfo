@@ -38,7 +38,9 @@ if __name__ == "__main__":
         from qsfo.monitoring.quantitative import OfflineMonitor
 
         mon = OfflineMonitor(formula, trace)
-        mon_signal = mon.signal(formula, trace)
+        mon_signal = mon.signal()
         print("Monitoring signal:")
-        for sig in mon_signal:
-            print(sig)
+        for sigvar, sig in mon_signal:
+            print("Robustness:")
+            for s in sig:
+                print(f'  {sigvar} ==> {s}')
