@@ -308,14 +308,25 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
 
         op = expr.rel_op
         assert op in ("<", "<=", ">", ">=", "=="), expr
-        expr = (expr.lhs - expr.rhs).collect(x)
+        expr = (expr.lhs - expr.rhs).collect(x)   # expr op 0
         coeff = expr.coeff(x)
-        bound = (expr - coeff * x) / coeff
+        rest  = expr - coeff * x
+        bound = -rest / coeff  # x op' bound (where op' depends on coeff and op)
+
         if op == "==":
-            U.append(bound)
             L.append(bound)
-        else:
-            (U if op in ("<=", "<") else L).append(bound)
+            U.append(bound)
+        elif op in ("<", "<="):
+            if coeff > 0:
+                U.append(bound)  # x {<,<=} bound
+            else:
+                L.append(bound)  # x {>,>=} bound
+        else:  # ">" or ">="
+            # expr >= 0
+            if coeff > 0:
+                L.append(bound)  # x {>,>=} bound
+            else:
+                U.append(bound)  # x {<,<=} bound
 
     return L, U, Polyhedron(P_0)
 

@@ -59,7 +59,7 @@ class TraceSegment(Polyhedron):
             new_timevar or self._timevar,
             self.substitute_constraints(S),
             variables,
-            self.time_bounds(),
+            #self.time_bounds(),
         )
         return n
 

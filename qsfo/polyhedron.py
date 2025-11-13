@@ -320,7 +320,8 @@ class Polyhedron:
         self.__str = None
 
         # time bounds -- used to sort polyhedra during operations
-        self._time_bounds = time_bounds
+        # FIXME: time bounds are not implemented now
+        self._time_bounds = NO_BOUNDS # time_bounds
         self._vars = set()
 
         # constant bounds on variables used to simplify the operations on this polyhedron
@@ -340,7 +341,7 @@ class Polyhedron:
             not self._constraints or self._vars
         ), f"Have constraints but no vars: {self}"
 
-        #self.reduce()
+        self.reduce()
 
     def _add_constraints(self, constraints):
         # Gather constraints that bound the polyhedron by a constant.
@@ -389,6 +390,7 @@ class Polyhedron:
         return self._vars and not self._constraints
 
     def time_bounds(self):
+        raise NotImplementedError("Not implemented now")
         return self._time_bounds
 
     def simplify_constraints(self) -> "Polyhedron":
@@ -617,7 +619,8 @@ class Polyhedron:
         elif self.is_universal():
             self.__str = f"UNIV({self._vars})"
         else:
-            self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
+            #self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
+            self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars}'
 
     def __str__(self):
         if not self.__str:
