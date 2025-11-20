@@ -69,6 +69,19 @@ class AstTransformer(Transformer):
         assert isinstance(items[1], (ValueTerm, TimeTerm, Constant)), items
         return LessThan(items[0], items[1])
 
+    def is_gt(self, items):
+        assert len(items) == 2
+        assert isinstance(items[0], (ValueTerm, TimeTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, TimeTerm, Constant)), items
+        return Not(LessOrEqual(items[0], items[1]))
+
+    def is_ge(self, items):
+        assert len(items) == 2
+        assert isinstance(items[0], (ValueTerm, TimeTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, TimeTerm, Constant)), items
+        return Not(LessThan(items[0], items[1]))
+
+
     def bound(self, items):
         return (int(items[0]), int(items[1]))
 

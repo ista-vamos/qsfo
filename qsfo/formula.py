@@ -25,6 +25,12 @@ class Formula:
     def bound_variables(self):
         return [v for v in self.variables() if v not in self.free_variables()]
 
+    def signals(self):
+        if isinstance(self, Signal):
+            return [self]
+        else:
+            return [s for c in self.children() for s in c.signals()]
+
     def root_str(self) -> str:
         """__str__ without children (overridden by child classes)"""
         return str(self)

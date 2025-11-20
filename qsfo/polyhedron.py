@@ -13,6 +13,7 @@ from sympy import (
     FiniteSet,
     EmptySet,
     Eq,
+    Ne,
     Le,
     Ge,
     Lt,
@@ -202,6 +203,22 @@ def simplify_constraints(C: list):
         # simplified to a single expression
         return list(elems)
 
+def sympy_to_ppl_expr(expr, variables):
+    """
+    Convert a SymPy linear inequality (Le, Ge, Lt, Gt) to a ppl.Constraint
+
+    `variables` is a list of (sympy var, PPL var) tuples and `var_map`
+    is a mapping made from this list.
+    """
+    # Extract coefficients
+    coeff_dict = expr.as_coefficients_dict()
+    constant = int(coeff_dict.get(1, 0))
+
+    # Create PPL expression
+    coeffs = {pplv.id(): int(coeff_dict.get(v, 0)) for v, pplv in variables}
+    return ppl.Linear_Expression(coeffs, constant)
+
+
 
 def sympy_to_ppl_constraint(sympy_expr, variables):
     """
@@ -210,17 +227,8 @@ def sympy_to_ppl_constraint(sympy_expr, variables):
     `variables` is a list of (sympy var, PPL var) tuples and `var_map`
     is a mapping made from this list.
     """
-    expr = sympy_expr.lhs - sympy_expr.rhs  # move all terms to LHS
-    # make the coefficients integers
-    expr, _ = fraction(expr.together())
-
-    # Extract coefficients
-    coeff_dict = expr.as_coefficients_dict()
-    constant = int(coeff_dict.get(1, 0))
-
-    # Create PPL expression
-    coeffs = {pplv.id(): int(coeff_dict.get(v, 0)) for v, pplv in variables}
-    expr = ppl.Linear_Expression(coeffs, constant)
+    # move all terms to LHS
+    expr = sympy_to_ppl_expr(sympy_expr.lhs - sympy_expr.rhs, variables)
 
     # Restore the inequality
     if isinstance(sympy_expr, Le):
@@ -253,17 +261,27 @@ def ppl_constraint_to_sympy(ppl_c, variables):
 
 def complement_term(term, timevar, time_bounds):
     """
-    Return a list of terms whose union describe the complementary constraints.
+    Yield lists of constraints whose union describe the complement of the given term
     """
-    C = [term.negated]
+
     if timevar and time_bounds:
         if isinstance(time_bounds, FiniteSet):
-            C.append(Eq(timevar, next(iter(time_bounds))))
+            timebounds = [Eq(timevar, next(iter(time_bounds)))]
         else:
-            C.append(time_bounds.start <= timevar)
-            C.append(timevar <= time_bounds.end)
+            timebounds = [time_bounds.start <= timevar, timevar <= time_bounds.end]
+    else:
+        timebounds = []
 
-    return C
+
+    if isinstance(term, Eq):
+        # in this case we yield two sets of constraints
+        for C in [term.lhs < term.rhs], [term.rhs < term.lhs]:
+            yield C + timebounds
+        return
+
+
+    # only one set of constraints
+    yield [term.negated] + timebounds
 
 
 # op, lhs, rhs = term.rel_op, term.lhs, term.rhs
@@ -445,14 +463,14 @@ class Polyhedron:
 
         :param timevar:  if this param is given, each element of the complement is constrained
                          to its time domain (e.g., assuming that the time bounds are not complemented).
-        """
+        """ 
         return [
-            Polyhedron([cc], variables=self.vars(), time_bounds=self._time_bounds)
+            Polyhedron(cc, variables=self.vars(), time_bounds=self._time_bounds)
             for c in self._constraints
             for cc in complement_term(c, timevar, self._time_bounds)
         ]
 
-    @trace_calls
+    #@trace_calls
     def eliminate_ppl(self, elim_vars: list[Var]):
         raise NotImplementedError()
         poly, variables = self.to_ppl_polyhedron()
@@ -463,7 +481,7 @@ class Polyhedron:
 
         return Polyhedron.from_ppl_polyhedron(poly, variables)
 
-    @trace_calls
+    #@trace_calls
     def eliminate(self, var: Var, do_simplify=False, restore_eqs=False):
         """
         Eliminate the variable `var` from this polyhedron.

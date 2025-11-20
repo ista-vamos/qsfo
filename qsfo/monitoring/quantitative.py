@@ -47,6 +47,7 @@ class OnlineMonitor:
         P.substitute({v: new_v})
         return P.intersection(Polyhedron([Eq(v, -new_v)]))
 
+    #@trace_calls
     def update(self, segment: dict, time_interval: Polyhedron):
         """
         :param: segment - new segment (w_i in the paper), it is a dict that maps
@@ -73,6 +74,9 @@ class OnlineMonitor:
         # known polyhedra, i.e., this call modifies `self._polyhedra`
         res = self.formula_robust(self._formula, P_seg)
 
+        if len(self._signal) > 20:
+            self._signal = self._signal[:20]
+
         return res.var(), res.reduce()
 
     @trace_calls
@@ -95,7 +99,7 @@ class OnlineMonitor:
             assert len(chld) == 1, "Negation must have only one sub-formula"
             newP = self.formula_robust(chld[0], P_seg)
             newv = self._fresh_variable()
-            return FormulaPolyhedraList(newv, list(P) + [newv == -newP.var()])
+            return FormulaPolyhedraList(newv, *(newP.intersection(Polyhedron([Eq(newv, -newP.var())]))))
         elif isinstance(formula, (LessThan, LessOrEqual)):
             term = ValueOp("-", chld[1], chld[0])
             term = self.term(term)
@@ -176,6 +180,7 @@ class OnlineMonitor:
             time_term: Term = formula.arg()
             # get the list of segments for the given signal
             segments: list[TraceSegment] = [elem[sig] for elem in self._signal]
+
             # XXX: we assume that the output of the signal is named 'v_{sig}'
             segments = [
                 seg.substitute(
@@ -197,7 +202,11 @@ class OnlineMonitor:
         v = P_in.var()
         v_new = self._fresh_variable()
         for ph in P_in:
+            add_to_trace('ph', ph)
             P_I = ph.intersection(Polyhedron([x_bounds[0] <= x, x <= x_bounds[1]]))
+            add_to_trace('P_I', P_I)
+            if P_I.is_empty():
+                continue
             Q = self.parametric_lp_maximize(P_I, v, x, v_new)
             P_res = P_res.union(Q)
 
@@ -278,7 +287,7 @@ class OnlineMonitor:
         return Q
 
 
-@trace_calls
+#@trace_calls
 def split_coeff(P, v, x):
     # take the polyhedron and get the expression that defines `v`
     exprs = [constr for constr in P.constraints() if constr.has(v) and isinstance(constr, Eq)]
@@ -298,7 +307,7 @@ def split_coeff(P, v, x):
     return alpha, beta
 
 
-@trace_calls
+#@trace_calls
 def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
     L, U, P_0 = [], [], []
     for expr in P.constraints():
@@ -351,7 +360,7 @@ class OfflineMonitor:
             segment: dict[str, TraceSegment] = {
                 name: piecewise_signals[name][n] for name in signal_names
             }
-            # the time interval is the same for all signal, so just take one signal
+            # the time interval is the same for all signals, so just take one signal
             time_interval: TraceSegment = piecewise_signals[signal_names[0]][n]
             time_interval: Polyhedron = time_interval.time_bounds_as_ph().substitute(
                 {time_interval.timevar(): mon.timevar}
