@@ -34,7 +34,7 @@ class OnlineMonitor:
         idx = self.__annon_vars_idx
         return Var(f"v_{idx}")
 
-    def _get_var(self, name) -> Var:
+    def _get_var(self, name: str) -> Var:
         return self._vars.get(name, self._fresh_variable(name))
 
     def negate(self, P: Polyhedron, v: Var) -> Polyhedron:
@@ -47,7 +47,7 @@ class OnlineMonitor:
         P.substitute({v: new_v})
         return P.intersection(Polyhedron([Eq(v, -new_v)]))
 
-    #@trace_calls
+    # @trace_calls
     def update(self, segment: dict, time_interval: Polyhedron):
         """
         :param: segment - new segment (w_i in the paper), it is a dict that maps
@@ -74,12 +74,9 @@ class OnlineMonitor:
         # known polyhedra, i.e., this call modifies `self._polyhedra`
         res = self.formula_robust(self._formula, P_seg)
 
-        if len(self._signal) > 20:
-            self._signal = self._signal[:20]
+        return FormulaPolyhedraList(res.var(), *res.reduce())
 
-        return res.var(), res.reduce()
-
-    @trace_calls
+    #@trace_calls
     def formula_robust(self, formula, P_seg) -> FormulaPolyhedraList:
         """
         Compute the robustness of the formula `self._formula`
@@ -99,13 +96,15 @@ class OnlineMonitor:
             assert len(chld) == 1, "Negation must have only one sub-formula"
             newP = self.formula_robust(chld[0], P_seg)
             newv = self._fresh_variable()
-            return FormulaPolyhedraList(newv, *(newP.intersection(Polyhedron([Eq(newv, -newP.var())]))))
+
+            phl: PolyhedraList = newP.intersection(Polyhedron([Eq(newv, -newP.var())])).eliminate(newP.var()).reduce()
+            return FormulaPolyhedraList(
+                newv, *phl
+            )
         elif isinstance(formula, (LessThan, LessOrEqual)):
             term = ValueOp("-", chld[1], chld[0])
             term = self.term(term)
-            return FormulaPolyhedraList(
-                term.var(), *term.intersection(P_seg).reduce()
-            )
+            return FormulaPolyhedraList(term.var(), *term.intersection(P_seg).reduce())
         # elif isinstance(formula, Or):
         #    P1, sig1 = self.formula_robust(chld[0], P)
         #    P2, sig2 = self.formula_robust(chld[1], P)
@@ -118,7 +117,7 @@ class OnlineMonitor:
                 f"Unhandled formula type '{type(formula)}': {formula}"
             )
 
-    @trace_calls
+    #@trace_calls
     def term(self, formula: Formula):
         """
         Compute robustness value (and constraints) for a term
@@ -189,7 +188,6 @@ class OnlineMonitor:
                 )
                 for seg in segments
             ]
-            #add_to_trace('segments', *segments)
             return FormulaPolyhedraList(resvar, *segments)
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
@@ -202,9 +200,7 @@ class OnlineMonitor:
         v = P_in.var()
         v_new = self._fresh_variable()
         for ph in P_in:
-            add_to_trace('ph', ph)
             P_I = ph.intersection(Polyhedron([x_bounds[0] <= x, x <= x_bounds[1]]))
-            add_to_trace('P_I', P_I)
             if P_I.is_empty():
                 continue
             Q = self.parametric_lp_maximize(P_I, v, x, v_new)
@@ -230,10 +226,11 @@ class OnlineMonitor:
             if not U:
                 q = (
                     G_pos.intersection(P_Y)
-                    .intersection(Polyhedron([Eq(v_new, 9999999)]))
+                    .intersection(Polyhedron([Eq(v_new, INFTY)]))
                     .reduce()
                 )
                 if not q.is_empty():
+                    add_to_trace('G_pos (not U)', q)
                     Q.add(q)
             else:
                 for u in U:
@@ -245,16 +242,19 @@ class OnlineMonitor:
                         .intersection(P_Y)
                         .intersection(Polyhedron([Eq(v_new, alpha * u + beta)]))
                     ).reduce()
+                    add_to_trace('u, A_u, F_u, P_Y, new_eq', u, A_u, F_u, P_Y, Eq(v_new, alpha * u + beta))
+                    add_to_trace('G_pos', q)
                     Q.add(q)
 
         if not G_neg.is_empty():
             if not L:
                 q = (
                     G_neg.intersection(P_Y)
-                    .intersection(Polyhedron([Eq(v_new, 9999999)]))
+                    .intersection(Polyhedron([Eq(v_new, INFTY)]))
                     .reduce()
                 )
                 Q.append(q)
+                add_to_trace('G_neg (not L)', q)
             else:
                 for l in L:
                     A_l = Polyhedron([(l >= ln) for ln in L])
@@ -265,6 +265,7 @@ class OnlineMonitor:
                         .intersection(P_Y)
                         .intersection(Polyhedron([Eq(v_new, alpha * l + beta)]))
                     ).reduce()
+                    add_to_trace('G_neg', q)
                     Q.add(q)
 
         if not G_zero.is_empty():
@@ -274,24 +275,28 @@ class OnlineMonitor:
                 .reduce()
             )
             Q.add(q)
+            add_to_trace('G_zero', q)
 
         q = (
             PolyhedraList(P_Y.complement())
             .intersection(P_0)
-            .intersection(Polyhedron([Eq(v_new, -9999999)]))
+            .intersection(Polyhedron([Eq(v_new, NEG_INFTY)]))
             .reduce()
         )
-        if not q:
-            Q.union(q)
+        if not q.is_empty():
+            add_to_trace('G_complement', q)
+            Q = Q.union(q)
 
-        return Q
+        return Q.reduce()
 
 
-#@trace_calls
+@trace_calls
 def split_coeff(P, v, x):
     # take the polyhedron and get the expression that defines `v`
-    exprs = [constr for constr in P.constraints() if constr.has(v) and isinstance(constr, Eq)]
-    assert len(exprs) == 1, f"{exprs}, v={v}"
+    exprs = [
+        constr for constr in P.constraints() if constr.has(v) and isinstance(constr, Eq)
+    ]
+    assert len(exprs) == 1, f"P={P}, exprs={exprs}, v={v}"
     expr = exprs[0]
 
     # rewrite the expression such that coeff. of `v` is -1, so that we have
@@ -307,7 +312,7 @@ def split_coeff(P, v, x):
     return alpha, beta
 
 
-#@trace_calls
+# @trace_calls
 def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
     L, U, P_0 = [], [], []
     for expr in P.constraints():
@@ -317,9 +322,9 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
 
         op = expr.rel_op
         assert op in ("<", "<=", ">", ">=", "=="), expr
-        expr = (expr.lhs - expr.rhs).collect(x)   # expr op 0
+        expr = (expr.lhs - expr.rhs).collect(x)  # expr op 0
         coeff = expr.coeff(x)
-        rest  = expr - coeff * x
+        rest = expr - coeff * x
         bound = -rest / coeff  # x op' bound (where op' depends on coeff and op)
 
         if op == "==":

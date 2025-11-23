@@ -3,7 +3,10 @@ import sys
 
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
-from qsfo.polyhedron import simplify_constraints
+from qsfo.polyhedron import solve_for_variable, FRACTIONS_PREC, Polyhedron
+
+from sympy import Eq, solve
+
 
 if __name__ == "__main__":
     parser = Parser()
@@ -52,7 +55,21 @@ if __name__ == "__main__":
         mon = OfflineMonitor(formula, trace)
         mon_signal = mon.signal()
         print("Monitoring signal:")
-        for sigvar, sig in mon_signal:
+        for sig in mon_signal:
             print("Robustness:")
-           #for s in sig:
-           #    print(f'  {sigvar} ==> {s}')
+            for s in sig:
+                #C = [f'{(c.lhs/FRACTIONS_PREC).evalf()} {c.rel_op} {(c.rhs/FRACTIONS_PREC).evalf()}' for c in s.constraints()]
+                #print(f'  {sig.var()} ==> {C}')
+
+                # get the defining equality for the robustness value
+                var = sig.var()
+                eq = [c for c in s.constraints() if isinstance(c, Eq) and c.has(var)]
+                if len(eq) == 1:
+                    S = solve(eq, var)
+                    assert isinstance(S, dict), (eq, S)
+                    C  = Polyhedron([c.subs(var, S[var]) for c in s.constraints() if not isinstance(c, Eq)] ).reduce().simplify_constraints()
+                    C = C.intersection(Polyhedron([Eq(var, S[var])]))
+                    print(f'  {var} ==> {C}')
+                    continue
+                else:
+                    print(f'  {var} ==> {s.simplify_constraints()}')

@@ -86,13 +86,16 @@ class PolyhedraList:
     def vars(self) -> set[Var]:
         return set(v for ph in self._phs for v in ph.vars())
 
-    def __len__(self):
+    def is_empty(self) -> bool:
+        return not self._phs
+
+    def __len__(self) -> int:
         return len(self._phs)
 
     def __iter__(self):
         return iter(self._phs)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'{{{", ".join(map(str, self._phs))}}}'
 
 

@@ -1,5 +1,7 @@
 from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval
-from sympy import Rational, Eq
+from sympy import Eq
+
+# from fractions import Fraction
 
 
 class TraceSegment(Polyhedron):
@@ -59,7 +61,7 @@ class TraceSegment(Polyhedron):
             new_timevar or self._timevar,
             self.substitute_constraints(S),
             variables,
-            #self.time_bounds(),
+            # self.time_bounds(),
         )
         return n
 
@@ -114,7 +116,7 @@ class SignalsTrace(list):
 
             return tr
 
-    def from_csv_file(path: str, sampling=None, timevar='t', signals: list[str] = None):
+    def from_csv_file(path: str, sampling=None, timevar="t", signals: list[str] = None):
         """
         If samling is not None, we assume that it is a floating point number describing
         the sampling frequency of the data in the CSV file. In that case,
@@ -125,32 +127,36 @@ class SignalsTrace(list):
         # TODO: use `csv` package
         with open(path, "r") as f:
             if signals:
-                header = [nm.strip() for nm in f.readline().split(',') if nm in signals]
+                header = [nm.strip() for nm in f.readline().split(",") if nm in signals]
             else:
-                header = [nm.strip() for nm in f.readline().split(',')]
+                header = [nm.strip() for nm in f.readline().split(",")]
 
             if sampling is not None:
                 header = [str(timevar)] + header
             tr = SignalsTrace(header, [])
             N = len(header)
             for n, line in enumerate(f):
-                vals = line.split(',')
+                vals = line.split(",")
                 if signals:
-                    vals = {header[i].strip(): float(vals[i]) for i in range(N) if header[i] in signals}
+                    vals = {
+                        header[i].strip(): float(vals[i])
+                        for i in range(N)
+                        if header[i] in signals
+                    }
                 else:
                     vals = {header[i].strip(): float(vals[i]) for i in range(N)}
 
                 if sampling is not None:
-                    vals[timevar] = n*sampling
+                    vals[timevar] = n * sampling
 
                 if len(vals) != N:
-                    raise RuntimeError(f"Missing values on line {n+2}. Expected {N} values, got {len(vals)}")
+                    raise RuntimeError(
+                        f"Missing values on line {n+2}. Expected {N} values, got {len(vals)}"
+                    )
 
                 tr.append(vals)
 
             return tr
-
-
 
     def from_list(lst: list):
         """
@@ -184,18 +190,17 @@ class SignalsTrace(list):
         last = self[0]
         for i in range(1, N):
             cur = self[i]
-            #a = Rational(cur[varname] - last[varname]) / Rational(cur[t] - last[t])
-            #b = Rational(last[varname]) - a * Rational(last[t])
+            # a = Rational(cur[varname] - last[varname]) / Rational(cur[t] - last[t])
+            # b = Rational(last[varname]) - a * Rational(last[t])
             a = (cur[varname] - last[varname]) / (cur[t] - last[t])
             b = (last[varname]) - a * (last[t])
             line = a * timevar + b
-            print(line)
             sig.append(
                 TraceSegment(
                     timevar,
                     constraints=[Eq(line - resvar, 0)],
                     bounds=Interval(last[t], cur[t], ropen=True),
-                    #bounds=Interval(Rational(last[t]), Rational(cur[t]), ropen=True),
+                    # bounds=Interval(Rational(last[t]), Rational(cur[t]), ropen=True),
                 ).connstraint_by_time_bounds()
             )
             last = cur

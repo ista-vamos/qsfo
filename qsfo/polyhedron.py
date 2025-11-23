@@ -1,5 +1,7 @@
 from itertools import product
 import ppl
+from fractions import Fraction
+from math import lcm
 
 from sympy import (
     symbols,
@@ -19,11 +21,12 @@ from sympy import (
     Lt,
     Gt,
     LessThan,
-    fraction,
 )
 from sympy.core.numbers import Infinity, NegativeInfinity
 
-from qsfo.dbg import trace_calls
+from qsfo.dbg import trace_calls, add_to_trace
+
+FRACTIONS_PREC=10
 
 
 class Var(Symbol):
@@ -203,6 +206,17 @@ def simplify_constraints(C: list):
         # simplified to a single expression
         return list(elems)
 
+
+def frac(x):
+    # FIXME: use better precision
+    #return Fraction(str(x))
+    return Fraction(float(x)).limit_denominator(FRACTIONS_PREC)
+
+
+def coef_with_denom(c: Fraction, denom):
+    return int(c.numerator * (denom / c.denominator))
+
+
 def sympy_to_ppl_expr(expr, variables):
     """
     Convert a SymPy linear inequality (Le, Ge, Lt, Gt) to a ppl.Constraint
@@ -211,13 +225,18 @@ def sympy_to_ppl_expr(expr, variables):
     is a mapping made from this list.
     """
     # Extract coefficients
-    coeff_dict = expr.as_coefficients_dict()
-    constant = int(coeff_dict.get(1, 0))
+    coeff_dict = {k: frac(v) for k, v in expr.as_coefficients_dict().items()}
+    constant = frac(coeff_dict.get(1, 0))
+
+    denom = lcm(*(v.denominator for v in coeff_dict.values()), constant.denominator)
 
     # Create PPL expression
-    coeffs = {pplv.id(): int(coeff_dict.get(v, 0)) for v, pplv in variables}
+    coeffs = {
+        pplv.id(): coef_with_denom(coeff_dict.get(v, frac(0)), denom)
+        for v, pplv in variables
+    }
+    constant = coef_with_denom(constant, denom)
     return ppl.Linear_Expression(coeffs, constant)
-
 
 
 def sympy_to_ppl_constraint(sympy_expr, variables):
@@ -272,13 +291,11 @@ def complement_term(term, timevar, time_bounds):
     else:
         timebounds = []
 
-
     if isinstance(term, Eq):
         # in this case we yield two sets of constraints
         for C in [term.lhs < term.rhs], [term.rhs < term.lhs]:
             yield C + timebounds
         return
-
 
     # only one set of constraints
     yield [term.negated] + timebounds
@@ -339,7 +356,7 @@ class Polyhedron:
 
         # time bounds -- used to sort polyhedra during operations
         # FIXME: time bounds are not implemented now
-        self._time_bounds = NO_BOUNDS # time_bounds
+        self._time_bounds = NO_BOUNDS  # time_bounds
         self._vars = set()
 
         # constant bounds on variables used to simplify the operations on this polyhedron
@@ -359,7 +376,7 @@ class Polyhedron:
             not self._constraints or self._vars
         ), f"Have constraints but no vars: {self}"
 
-        self.reduce()
+        # self.reduce()
 
     def _add_constraints(self, constraints):
         # Gather constraints that bound the polyhedron by a constant.
@@ -463,14 +480,14 @@ class Polyhedron:
 
         :param timevar:  if this param is given, each element of the complement is constrained
                          to its time domain (e.g., assuming that the time bounds are not complemented).
-        """ 
+        """
         return [
             Polyhedron(cc, variables=self.vars(), time_bounds=self._time_bounds)
             for c in self._constraints
             for cc in complement_term(c, timevar, self._time_bounds)
         ]
 
-    #@trace_calls
+    # @trace_calls
     def eliminate_ppl(self, elim_vars: list[Var]):
         raise NotImplementedError()
         poly, variables = self.to_ppl_polyhedron()
@@ -481,7 +498,7 @@ class Polyhedron:
 
         return Polyhedron.from_ppl_polyhedron(poly, variables)
 
-    #@trace_calls
+    # @trace_calls
     def eliminate(self, var: Var, do_simplify=False, restore_eqs=False):
         """
         Eliminate the variable `var` from this polyhedron.
@@ -627,8 +644,10 @@ class Polyhedron:
         return self._vars == rhs._vars and self._constraints == rhs._constraints
 
     def __hash__(self) -> bool:
-        if not self.__str:
-            self.__create_str()
+        # FIXME
+        # if not self.__str:
+        #    self.__create_str()
+        self.__create_str()
         return hash(self.__str)
 
     def __create_str(self):
@@ -637,13 +656,16 @@ class Polyhedron:
         elif self.is_universal():
             self.__str = f"UNIV({self._vars})"
         else:
-            #self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
-            self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars}'
+            # self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
+            self.__str = (
+                f'{{{", ".join(map(str, self._constraints))}}} over {self._vars}'
+            )
 
     def __str__(self):
-        if not self.__str:
-            self.__create_str()
+        # if not self.__str:
+        #    self.__create_str()
 
+        self.__create_str()
         return self.__str
 
 
