@@ -217,9 +217,9 @@ class OnlineMonitor:
         alpha, beta = split_coeff(P, v, x)
         L, U, P_0 = isolate_bounds(P, x)
         P_Y = P.eliminate(x)
-        G_pos = P_0.intersection(Polyhedron([alpha > 0], variables=P_0.vars()))
-        G_neg = P_0.intersection(Polyhedron([alpha < 0], variables=P_0.vars()))
-        G_zero = P_0.intersection(Polyhedron([Eq(alpha, 0)], variables=P_0.vars()))
+        G_pos = P_0.intersection(Polyhedron([alpha > 0], variables=P_0.vars())).reduce()
+        G_neg = P_0.intersection(Polyhedron([alpha < 0], variables=P_0.vars())).reduce()
+        G_zero = P_0.intersection(Polyhedron([Eq(alpha, 0)], variables=P_0.vars())).reduce()
         Q = PolyhedraList()
 
         if not G_pos.is_empty():
@@ -227,11 +227,9 @@ class OnlineMonitor:
                 q = (
                     G_pos.intersection(P_Y)
                     .intersection(Polyhedron([Eq(v_new, INFTY)]))
-                    .reduce()
                 )
-                if not q.is_empty():
-                    add_to_trace('G_pos (not U)', q)
-                    Q.add(q)
+                add_to_trace('G_pos (not U)', q)
+                Q.add(q)
             else:
                 for u in U:
                     A_u = Polyhedron([(u <= un) for un in U])
@@ -241,7 +239,7 @@ class OnlineMonitor:
                         .intersection(F_u)
                         .intersection(P_Y)
                         .intersection(Polyhedron([Eq(v_new, alpha * u + beta)]))
-                    ).reduce()
+                    )
                     add_to_trace('u, A_u, F_u, P_Y, new_eq', u, A_u, F_u, P_Y, Eq(v_new, alpha * u + beta))
                     add_to_trace('G_pos', q)
                     Q.add(q)
@@ -251,7 +249,6 @@ class OnlineMonitor:
                 q = (
                     G_neg.intersection(P_Y)
                     .intersection(Polyhedron([Eq(v_new, INFTY)]))
-                    .reduce()
                 )
                 Q.append(q)
                 add_to_trace('G_neg (not L)', q)
@@ -264,7 +261,7 @@ class OnlineMonitor:
                         .intersection(F_l)
                         .intersection(P_Y)
                         .intersection(Polyhedron([Eq(v_new, alpha * l + beta)]))
-                    ).reduce()
+                    )
                     add_to_trace('G_neg', q)
                     Q.add(q)
 
@@ -272,7 +269,6 @@ class OnlineMonitor:
             q = (
                 G_zero.intersection(P_Y)
                 .intersection(Polyhedron([Eq(v_new, beta)]))
-                .reduce()
             )
             Q.add(q)
             add_to_trace('G_zero', q)
@@ -281,7 +277,6 @@ class OnlineMonitor:
             PolyhedraList(P_Y.complement())
             .intersection(P_0)
             .intersection(Polyhedron([Eq(v_new, NEG_INFTY)]))
-            .reduce()
         )
         if not q.is_empty():
             add_to_trace('G_complement', q)
