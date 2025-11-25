@@ -28,7 +28,6 @@ class RobustnessPolyhedron:
     def to_list(self):
         return RobustnessPolyhedraList((self,))
 
-    @trace_calls
     def substitute(self, S):
         return RobustnessPolyhedron(
             self._robustness_expr.subs(list(S.items())), self._poly.substitute(S)
@@ -318,8 +317,6 @@ class OnlineMonitor:
         # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
         alpha, beta = split_coeff(robustness_expr, x)
 
-        P = P.intersection(Polyhedron([Eq(robustness_expr, 0)]))
-
         # get upper and lower bounds on `x`
         L, U, P_0 = isolate_bounds(P, x)
         P_Y = P.eliminate(x)
@@ -339,11 +336,13 @@ class OnlineMonitor:
                     add_to_trace("G_pos (not U)", Q[-1])
             else:
                 for u in U:
-                    A_u = Polyhedron([(u <= un) for un in U])
-                    F_u = Polyhedron([(l <= u) for l in L])
+                    A_u = Polyhedron([(u <= un) for un in U], variables=P_Y.vars())
+                    F_u = Polyhedron([(l <= u) for l in L], variables=P_Y.vars())
                     q = (
                         G_pos.intersection(A_u).intersection(F_u).intersection(P_Y)
                     ).reduce()
+                    add_to_trace("A_u constraints", [(u <= un) for un in U])
+                    add_to_trace('G_pos computation (P_Y, G_pos, A_u, F_u, intersection of all)', P_Y, G_pos, A_u, F_u, q)
                     if not q.is_empty():
                         Q.append(RobustnessPolyhedron(alpha * u + beta, q))
                         add_to_trace("G_pos", Q[-1])
@@ -356,8 +355,8 @@ class OnlineMonitor:
                     add_to_trace("G_neg", Q[-1])
             else:
                 for l in L:
-                    A_l = Polyhedron([(l >= ln) for ln in L])
-                    F_l = Polyhedron([(l <= u) for u in U])
+                    A_l = Polyhedron([(l >= ln) for ln in L], variables=P_Y.vars())
+                    F_l = Polyhedron([(l <= u) for u in U], variables=P_Y.vars())
                     q = (
                         G_neg.intersection(A_l).intersection(F_l).intersection(P_Y)
                     ).reduce()
