@@ -38,7 +38,7 @@ class TraceSegment(Polyhedron):
 
         return self
 
-    def timevar(self):
+    def timevar(self) -> Var:
         return self._timevar
 
     def time_bounds_as_ph(self) -> Polyhedron:

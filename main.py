@@ -62,14 +62,4 @@ if __name__ == "__main__":
                 #print(f'  {sig.var()} ==> {C}')
 
                 # get the defining equality for the robustness value
-                var = sig.var()
-                eq = [c for c in s.constraints() if isinstance(c, Eq) and c.has(var)]
-                if len(eq) == 1:
-                    S = solve(eq, var)
-                    assert isinstance(S, dict), (eq, S)
-                    C  = Polyhedron([c.subs(var, S[var]) for c in s.constraints() if not isinstance(c, Eq)] ).reduce().simplify_constraints()
-                    C = C.intersection(Polyhedron([Eq(var, S[var])]))
-                    print(f'  {var} ==> {C}')
-                    continue
-                else:
-                    print(f'  {var} ==> {s.simplify_constraints()}')
+                print(f'  {s.robustness()} @ {s.poly()}')

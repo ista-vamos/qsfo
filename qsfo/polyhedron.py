@@ -26,7 +26,7 @@ from sympy.core.numbers import Infinity, NegativeInfinity
 
 from qsfo.dbg import trace_calls, add_to_trace
 
-FRACTIONS_PREC=10
+FRACTIONS_PREC = 10
 
 
 class Var(Symbol):
@@ -209,7 +209,7 @@ def simplify_constraints(C: list):
 
 def frac(x):
     # FIXME: use better precision
-    #return Fraction(str(x))
+    # return Fraction(str(x))
     return Fraction(float(x)).limit_denominator(FRACTIONS_PREC)
 
 
