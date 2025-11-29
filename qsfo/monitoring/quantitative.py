@@ -156,7 +156,39 @@ class OnlineMonitor:
 
         # compute the monitoring signal and update the list of
         # known polyhedra, i.e., this call modifies `self._polyhedra`
-        return self.formula_robust(self._formula, P_seg)
+        R = self.formula_robust(self._formula, P_seg)
+        assert R, "Got no robustness polyhedra"
+
+        # compute the maximum robustness over the polyhedra
+        M: list[RobustnessPolyhedron] = [R[0]]
+        for P in R[1:]:
+            newM: list[RobustnessPolyhedron] = []
+            for X in M:
+                # robustness where P and X intersect
+                r_P, r_X = P.robustness(), X.robustness()
+                P_I= X.poly().intersection(P.poly())
+                if not P_I.is_empty():
+                    newM.append(RobustnessPolyhedron(r_P,
+                                                     P_I.intersection(Polyhedron([r_P > r_X]))))
+                    newM.append(RobustnessPolyhedron(r_X,
+                                                     P_I.intersection(Polyhedron([r_P < r_X]))))
+
+                    # robustness where P and X do not intersect
+                    C: PolyhedraList = PolyhedraList(*P_I.complement())
+                    print(P_I)
+                    print(C)
+                    newM.append(RobustnessPolyhedron(r_P,
+                                                     C.intersection(P.poly())))
+                    newM.append(RobustnessPolyhedron(r_X,
+                                                     C.intersection(X.poly())))
+                else:
+                    newM.extend((X, P))
+            M = newM
+
+        for m in M:
+            print(m)
+
+        return M
 
     @trace_calls
     def formula_robust(self, formula, P_seg) -> RobustnessPolyhedraList:
