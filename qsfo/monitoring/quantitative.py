@@ -1,4 +1,5 @@
-from sympy.external.gmpy import is_fermat_prp
+import time
+
 from qsfo.formula import *
 from qsfo.monitoring.trace import TraceSegment
 from qsfo.monitoring.polyhedralist import FormulaPolyhedraList, PolyhedraList
@@ -110,11 +111,13 @@ class OnlineMonitor:
         # we need to create new fresh variables while computing signals,
         # we cache them here
         # XXX: if the cache becomes too big, it might be better not
-        # to cache the variables, but ust create them and let garbage collection
+        # to cache the variables, but just create them and let garbage collection
         # get rid of them once we do not need them
         self._vars = {}
         # numbering for unnamed variables
         self.__annon_vars_idx: int = 0
+
+        self._last_time_measure = None
 
     def _fresh_variable(self, name: str = None) -> Var:
         if name:
@@ -166,15 +169,25 @@ class OnlineMonitor:
 
         # compute the monitoring signal and update the list of
         # known polyhedra, i.e., this call modifies `self._polyhedra`
+        start_time = time.process_time()
         R = self.formula_robust(self._formula, P_seg)
+        end_time = time.process_time()
         assert R, "Got no robustness polyhedra"
 
         # add_to_trace("R", *R)
 
         # compute the maximum robustness over the polyhedra
+        start_time_2 = time.process_time()
         M = self.compute_maxima(R)
-        # TODO: if possible, do the simplification already in `compute_maxima`,
-        # to have as few polyhedra as possible
+        end_time_2 = time.process_time()
+
+        r_time = end_time - start_time
+        m_time = end_time_2 - start_time_2
+        self._last_time_measure = (r_time, m_time)
+        print(
+            f"\033[0;32m[time: robustness + maxima]: {r_time} + {m_time} = {r_time + m_time}\033[0m"
+        )
+
         M = self.simplify_maxima(M)
         return M
 
@@ -573,9 +586,10 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
 
 class OfflineMonitor:
 
-    def __init__(self, formula, trace):
+    def __init__(self, formula, trace, horizon=None):
         self._formula = formula
         self._trace = trace
+        self._horizon = horizon
 
     def signal(self):
         mon = OnlineMonitor(self._formula)
