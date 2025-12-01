@@ -3,7 +3,7 @@ from qsfo.formula import *
 from qsfo.monitoring.trace import TraceSegment
 from qsfo.monitoring.polyhedralist import FormulaPolyhedraList, PolyhedraList
 from qsfo.polyhedron import Var, Polyhedron, INFTY, NEG_INFTY, solve_for_variable
-from sympy import And, Eq
+from sympy import And, Eq, S, Or
 from qsfo.dbg import trace_calls, add_to_trace
 
 
@@ -16,6 +16,9 @@ class RobustnessPolyhedron:
     """
 
     def __init__(self, r_expr, poly: Polyhedron) -> None:
+        assert isinstance(poly, Polyhedron), (type(poly), poly)
+        assert not poly.is_empty(), poly
+        assert not poly.reduce().is_empty(), poly
         self._robustness_expr = r_expr
         self._poly = poly
 
@@ -24,6 +27,13 @@ class RobustnessPolyhedron:
 
     def robustness(self):
         return self._robustness_expr
+
+    def reduce(self):
+        self._poly.reduce()
+        return self
+
+    def is_empty(self):
+        return self._poly.is_empty()
 
     def to_list(self):
         return RobustnessPolyhedraList((self,))
@@ -159,38 +169,144 @@ class OnlineMonitor:
         R = self.formula_robust(self._formula, P_seg)
         assert R, "Got no robustness polyhedra"
 
+        # add_to_trace("R", *R)
+
         # compute the maximum robustness over the polyhedra
-        M: list[RobustnessPolyhedron] = [R[0]]
-        for P in R[1:]:
-            newM: list[RobustnessPolyhedron] = []
-            for X in M:
-                # robustness where P and X intersect
-                r_P, r_X = P.robustness(), X.robustness()
-                P_I= X.poly().intersection(P.poly())
-                if not P_I.is_empty():
-                    newM.append(RobustnessPolyhedron(r_P,
-                                                     P_I.intersection(Polyhedron([r_P > r_X]))))
-                    newM.append(RobustnessPolyhedron(r_X,
-                                                     P_I.intersection(Polyhedron([r_P < r_X]))))
-
-                    # robustness where P and X do not intersect
-                    C: PolyhedraList = PolyhedraList(*P_I.complement())
-                    print(P_I)
-                    print(C)
-                    newM.append(RobustnessPolyhedron(r_P,
-                                                     C.intersection(P.poly())))
-                    newM.append(RobustnessPolyhedron(r_X,
-                                                     C.intersection(X.poly())))
-                else:
-                    newM.extend((X, P))
-            M = newM
-
-        for m in M:
-            print(m)
-
+        M = self.compute_maxima(R)
+        # TODO: if possible, do the simplification already in `compute_maxima`,
+        # to have as few polyhedra as possible
+        M = self.simplify_maxima(M)
         return M
 
-    @trace_calls
+    # def compute_maxima_region(self, i: int, R):
+    #    rob = R[i].robustness()
+    #    P = R[i].poly()
+    #    # this we handle in the parent
+    #    assert rob != NEG_INFTY, P
+    #
+    #    covered = PolyhedraList()
+    #    maxima = []
+    #    for j in range(len(R)):
+    #        if i == j:
+    #            continue
+    #
+    #        P_j = R[j]
+    #        covered.add(P_j.poly())
+    #
+    #        P_I = P.intersection(P_j.poly()).reduce()
+    #        if P_I.is_empty():
+    #            continue
+    #        # these constraints are True (and we have to handle them explicitly because PPL does not handle infty)
+    #        rob_j = P_j.robustness()
+    #        if rob != INFTY and rob_j != NEG_INFTY:
+    #            P_I = P.intersection(Polyhedron([rob > rob_j]))
+    #    return P_I.reduce()
+    #
+    # def _compute_maxima(self, R):
+    #    P_ninfty = PolyhedraList()
+    #    new_R = []
+    #    for i, P in enumerate(R):
+    #        rob = P.robustness()
+    #        if rob == NEG_INFTY:
+    #            P_ninfty.add(P.poly())
+    #        else:
+    #            region = self.compute_maxima_region(i, R)
+    #            print(region)
+    #            if region.is_empty():
+    #                continue
+    #            new_R.append(RobustnessPolyhedron(rob, region))
+    #
+    #    return new_R
+
+    def compute_maxima(self, R):
+        M: set[RobustnessPolyhedron] = [R[0]]
+        wbg: set[RobustnessPolyhedron] = set(R[1:])
+        while wbg:
+            P = wbg.pop()
+            # add_to_trace(
+            #    "M", *(f"{m} covers {And(*m.poly().constraints()).as_set()}" for m in M)
+            # )
+            # add_to_trace(
+            #    "  together covers", Or(*(And(*m.poly().constraints()) for m in M)).as_set()
+            # )
+            # if __debug__:
+            #    for i in range(len(M)):
+            #        for j in range(len(M)):
+            #            if i == j:
+            #                continue
+            #            assert (
+            #                M[i].poly().intersection(M[j].poly()).reduce().is_empty()
+            #            ), (str(M[i]), str(M[j]))
+            newM: set[RobustnessPolyhedron] = set()
+            intersected = False
+            for n, X in enumerate(M):
+                # robustness where P and X intersect
+                r_P, r_X = P.robustness(), X.robustness()
+                P_I = X.poly().intersection(P.poly()).reduce()
+                if not P_I.is_empty():
+                    # split the polyhedra to multiple parts based on the value of robustness
+                    intersected = True
+                    # explicitely handle infinity, because the polyhedra cannot cope with them
+                    # (more concretely, the `reduce` method that is called automatically after intersection)
+                    if r_P == INFTY:
+                        newM.add(RobustnessPolyhedron(r_P, P_I))
+                    elif r_P == NEG_INFTY:
+                        newM.add(RobustnessPolyhedron(r_X, P_I))
+                    else:
+                        P_r = P_I.intersection(Polyhedron([r_P >= r_X])).reduce()
+                        if not P_r.is_empty():
+                            newM.add(RobustnessPolyhedron(r_P, P_r))
+                        P_x = P_I.intersection(Polyhedron([r_P < r_X])).reduce()
+                        if not P_x.is_empty():
+                            newM.add(RobustnessPolyhedron(r_X, P_x))
+
+                    # handle the robustness where P and X do not intersect
+                    C: PolyhedraList = PolyhedraList(*P_I.complement())
+                    for c in C:
+                        # the part of P that is outside intersection needs to go back to
+                        # the workbag, because it may intersect with other elements of M
+                        cn = c.intersection(P.poly()).reduce()
+                        if not cn.is_empty():
+                            wbg.add(RobustnessPolyhedron(r_P, cn))
+                        # the part of X that is not in the intersection is preserved in M
+                        cx = c.intersection(X.poly()).reduce()
+                        if not cx.is_empty():
+                            newM.add(RobustnessPolyhedron(r_X, cx))
+
+                    # at the moment we found this intersection, we modified the workbag
+                    # and we need to restart. Just append the rest of M to newM and go
+                    # for another polyhedron from the workbag
+                    newM.update(iter(M[n + 1 :]))
+                    M = list(newM)
+                    break
+                else:
+                    newM.add(X)
+            if not intersected:
+                newM.add(P)
+            M = list(newM)
+
+        res: list[RobustnessPolyhedron] = []
+        for m in M:
+            if m.reduce().is_empty():
+                continue
+            res.append(m)
+
+        return res
+
+    def simplify_maxima(self, M):
+        map = dict()
+        for R in M:
+            interval = And(*R.poly().constraints()).as_set()
+            rob = R.robustness()
+            cur = map.get(rob)
+            if cur is None:
+                map[rob] = interval
+            else:
+                map[rob] = cur | interval
+
+        return [(r, C) for r, C in map.items()]
+
+    # @trace_calls
     def formula_robust(self, formula, P_seg) -> RobustnessPolyhedraList:
         """
         Compute the robustness of the formula `self._formula`
@@ -244,7 +360,7 @@ class OnlineMonitor:
                 f"Unhandled formula type '{type(formula)}': {formula}"
             )
 
-    @trace_calls
+    # @trace_calls
     def term(self, formula: Formula) -> RobustnessPolyhedraList:
         """
         Compute robustness value (and constraints) for a term
@@ -317,7 +433,7 @@ class OnlineMonitor:
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
 
-    @trace_calls
+    # @trace_calls
     def eliminate_by_sup(
         self, P_in: RobustnessPolyhedraList, x: Var, x_bounds: tuple
     ) -> RobustnessPolyhedraList:
@@ -335,7 +451,7 @@ class OnlineMonitor:
 
         return RobustnessPolyhedraList(P_res)
 
-    @trace_calls
+    # @trace_calls
     def parametric_lp_maximize(
         self, P: Polyhedron, robustness_expr, x: Var
     ) -> FormulaPolyhedraList:
@@ -365,7 +481,7 @@ class OnlineMonitor:
                 q = G_pos.intersection(P_Y).intersection(robustness_poly).reduce()
                 if not q.is_empty():
                     Q.append(RobustnessPolyhedron(INFTY, q))
-                    add_to_trace("G_pos (not U)", Q[-1])
+                    # add_to_trace("G_pos (not U)", Q[-1])
             else:
                 for u in U:
                     A_u = Polyhedron([(u <= un) for un in U], variables=P_Y.vars())
@@ -373,18 +489,18 @@ class OnlineMonitor:
                     q = (
                         G_pos.intersection(A_u).intersection(F_u).intersection(P_Y)
                     ).reduce()
-                    add_to_trace("A_u constraints", [(u <= un) for un in U])
-                    add_to_trace('G_pos computation (P_Y, G_pos, A_u, F_u, intersection of all)', P_Y, G_pos, A_u, F_u, q)
+                    # add_to_trace("A_u constraints", [(u <= un) for un in U])
+                    # add_to_trace('G_pos computation (P_Y, G_pos, A_u, F_u, intersection of all)', P_Y, G_pos, A_u, F_u, q)
                     if not q.is_empty():
                         Q.append(RobustnessPolyhedron(alpha * u + beta, q))
-                        add_to_trace("G_pos", Q[-1])
+                        # add_to_trace("G_pos", Q[-1])
 
         if not G_neg.is_empty():
             if not L:
                 q = G_neg.intersection(P_Y).reduce()
                 if not q.is_empty():
                     Q.append(RobustnessPolyhedron(INFTY, q))
-                    add_to_trace("G_neg", Q[-1])
+                    # add_to_trace("G_neg", Q[-1])
             else:
                 for l in L:
                     A_l = Polyhedron([(l >= ln) for ln in L], variables=P_Y.vars())
@@ -394,32 +510,35 @@ class OnlineMonitor:
                     ).reduce()
                     if not q.is_empty():
                         Q.append(RobustnessPolyhedron(alpha * l + beta, q))
-                        add_to_trace("G_neg", Q[-1])
+                        # add_to_trace("G_neg", Q[-1])
 
         if not G_zero.is_empty():
             q = G_zero.intersection(P_Y).reduce()
             if not q.is_empty():
                 Q.append(RobustnessPolyhedron(beta, q))
-                add_to_trace("G_zero", Q[-1])
+                # add_to_trace("G_zero", Q[-1])
 
         q = (PolyhedraList(P_Y.complement()).intersection(P_0)).reduce()
         if not q.is_empty():
             for ph in q:
                 Q.append(RobustnessPolyhedron(NEG_INFTY, ph))
-                add_to_trace("G_complement", Q[-1])
+                # add_to_trace("G_complement", Q[-1])
 
         return RobustnessPolyhedraList(Q)
 
 
-@trace_calls
+# @trace_calls
 def split_coeff(expr, x):  # now rewirte to `\alpha*x \beta`
+    """
+    Rewrite expression `expr` into the form `alpha * x + beta`
+    """
     expr = expr.collect(x)
     alpha = expr.coeff(x)
     beta = expr - alpha * x
     return alpha, beta
 
 
-@trace_calls
+# @trace_calls
 def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
     L, U, P_0 = [], [], []
     for expr in P.constraints():

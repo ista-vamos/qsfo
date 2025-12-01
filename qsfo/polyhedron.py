@@ -439,7 +439,7 @@ class Polyhedron:
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars(), time_bounds=self._time_bounds)
 
-    def intersection(self, rhs: "Polyhedron", ignore_variables=True):
+    def intersection(self, rhs: "Polyhedron", ignore_variables=True) -> "Polyhedron":
         """
         Do intersection of two polyhedra. If `ignore_variables` is `True`, the operation first
         "extends" both polyhedra to be in the same dimensions (the same set of variables)
@@ -656,6 +656,8 @@ class Polyhedron:
         elif self.is_universal():
             self.__str = f"UNIV({self._vars})"
         else:
+            assert self._constraints
+            assert self._vars
             # self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
             self.__str = (
                 f'{{{", ".join(map(str, self._constraints))}}} over {self._vars}'
