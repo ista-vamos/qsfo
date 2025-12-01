@@ -21,6 +21,12 @@ class AstTransformer(Transformer):
         assert isinstance(items[1], TimeTerm), items
         return TimeOp("-", items[0], items[1])
 
+    def timemul(self, items):
+        assert len(items) == 2, items
+        assert isinstance(items[0], TimeTerm), items
+        assert isinstance(items[1], TimeTerm), items
+        return TimeOp("*", items[0], items[1])
+
     def timeconst(self, items):
         assert len(items) == 1
         assert isinstance(items[0], (int, float)), items[0]
@@ -51,6 +57,12 @@ class AstTransformer(Transformer):
         assert isinstance(items[0], ValueTerm), items
         assert isinstance(items[1], ValueTerm), items
         return ValueOp("+", items[0], items[1])
+
+    def valmul(self, items):
+        assert len(items) == 2
+        assert isinstance(items[0], ValueTerm), items
+        assert isinstance(items[1], ValueTerm), items
+        return ValueOp("*", items[0], items[1])
 
     def valabs(self, items):
         assert len(items) == 1

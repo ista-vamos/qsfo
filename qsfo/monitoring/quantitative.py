@@ -25,6 +25,7 @@ class RobustnessPolyhedron:
     """
 
     def __init__(self, r_expr, poly: Polyhedron) -> None:
+        assert r_expr is not None, poly
         assert isinstance(poly, Polyhedron), (type(poly), poly)
         assert not poly.is_empty(), poly
         assert not poly.reduce().is_empty(), poly
@@ -108,8 +109,12 @@ def robustness_poly_op(op, lhs, rhs):
         expr = lhs.robustness() + rhs.robustness()
     elif op == "-":
         expr = lhs.robustness() - rhs.robustness()
+    elif op == "*":
+        expr = lhs.robustness() * rhs.robustness()
     else:
         raise NotImplementedError(f"Operation not implemented: {op}")
+
+    return expr
 
 
 class OnlineMonitor:
@@ -450,6 +455,53 @@ class OnlineMonitor:
                 elif isinstance(children[1], Constant) and children[1].value() == 0:
                     # 0 on the right can be ignored for addition and substraction
                     return self.term(children[0])
+
+                rpl_0: RobustnessPolyhedraList = self.term(children[0])
+                rpl_1: RobustnessPolyhedraList = self.term(children[1])
+                assert rpl_0 is not None, formula
+                assert rpl_1 is not None, formula
+
+                return RobustnessPolyhedraList(
+                    (
+                        RobustnessPolyhedron(
+                            robustness_poly_op(op, lhs, rhs),
+                            lhs.poly().intersection(rhs.poly()),
+                        )
+                        for lhs in rpl_0
+                        for rhs in rpl_1
+                    )
+                )
+            if op == '*':
+                assert len(formula.children()) == 2, formula
+                children = formula.children()
+
+                assert isinstance(children[0], Constant) or isinstance(children[1], Constant)
+
+                if isinstance(children[0], Constant):
+                    # 1 on the left can be ignored for multiplication
+                    if children[0].value() == 1:
+                        return self.term(children[1])
+                    elif children[0].value() == -1:
+                        # otherwise we negate the value of the subterm
+                        lhs: RobustnessPolyhedraList = self.term(children[1])
+                        return RobustnessPolyhedraList(
+                            (
+                                RobustnessPolyhedron(-ph.robustness(), ph.poly())
+                                for ph in lhs
+                            )
+                        )
+                    # TODO: should we do short path also for 0?
+                elif isinstance(children[1], Constant):
+                    if children[1].value() == 1:
+                        return self.term(children[0])
+                    elif children[1].value() == -1:
+                        rhs: RobustnessPolyhedraList = self.term(children[0])
+                        return RobustnessPolyhedraList(
+                            (
+                                RobustnessPolyhedron(-ph.robustness(), ph.poly())
+                                for ph in rhs
+                            )
+                        )
 
                 rpl_0: RobustnessPolyhedraList = self.term(children[0])
                 rpl_1: RobustnessPolyhedraList = self.term(children[1])
