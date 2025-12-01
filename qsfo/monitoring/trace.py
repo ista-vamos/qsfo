@@ -22,6 +22,9 @@ class TraceSegment(Polyhedron):
         self._timevar = timevar
         self._time_bounds = bounds
 
+    def bounds(self):
+        return self._time_bounds
+
     def connstraint_by_time_bounds(self) -> "TraceSegment":
         bounds = self._time_bounds
         timevar = self._timevar

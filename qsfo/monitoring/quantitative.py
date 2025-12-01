@@ -3,7 +3,15 @@ import time
 from qsfo.formula import *
 from qsfo.monitoring.trace import TraceSegment
 from qsfo.monitoring.polyhedralist import FormulaPolyhedraList, PolyhedraList
-from qsfo.polyhedron import Var, Polyhedron, INFTY, NEG_INFTY, solve_for_variable
+from qsfo.polyhedron import (
+    Var,
+    Polyhedron,
+    INFTY,
+    NEG_INFTY,
+    solve_for_variable,
+    NO_BOUNDS,
+    Interval,
+)
 from sympy import And, Eq, S, Or
 from qsfo.dbg import trace_calls, add_to_trace
 
@@ -63,10 +71,16 @@ class RobustnessPolyhedraList(list):
 
 
 class RobustnessTraceSegment(RobustnessPolyhedron):
-    def __init__(self, r_expr, poly: Polyhedron, timevar: Var) -> None:
+    def __init__(
+        self, r_expr, poly: Polyhedron, timevar: Var, bounds: Interval = NO_BOUNDS
+    ) -> None:
         self._robustness_expr = r_expr
         self._poly = poly
         self._timevar = timevar
+        self._bounds = bounds
+
+    def bounds(self) -> Interval:
+        return self._bounds
 
     def timevar(self) -> Var:
         return self._timevar
@@ -74,7 +88,6 @@ class RobustnessTraceSegment(RobustnessPolyhedron):
 
 def segment_to_rph(var: str, segment: TraceSegment) -> RobustnessTraceSegment:
     # TODO: we assume that the value of the segment is named `v_{var}`
-    print(var, segment)
     var = Var(f"v_{var}")
     defeq = [c for c in segment.constraints() if isinstance(c, Eq) and c.has(var)]
     rest = [c for c in segment.constraints() if not (isinstance(c, Eq) and c.has(var))]
@@ -85,7 +98,9 @@ def segment_to_rph(var: str, segment: TraceSegment) -> RobustnessTraceSegment:
     coef = expr.coeff(var)
     robustness = (expr - coef * var) / (-1 * coef)
 
-    return RobustnessTraceSegment(robustness, Polyhedron(rest), segment.timevar())
+    return RobustnessTraceSegment(
+        robustness, Polyhedron(rest), segment.timevar(), bounds=segment.bounds()
+    )
 
 
 def robustness_poly_op(op, lhs, rhs):
@@ -98,12 +113,13 @@ def robustness_poly_op(op, lhs, rhs):
 
 
 class OnlineMonitor:
-    def __init__(self, formula: Formula):
+    def __init__(self, formula: Formula, horizon: float = None):
         self._formula: Formula = formula
         # the signal history up to the horizon (P_f)
         self._signal: list[dict[str, TraceSegment]] = []
         # at this moment, we hardcode that our free time variable is 't'
         self.timevar = Var("t")
+        self._horizon = horizon
 
         # TODO: gather constraints from the formula
         self._P_dom: Polyhedron | None = Polyhedron([self.timevar >= 0])
@@ -141,13 +157,33 @@ class OnlineMonitor:
         P.substitute({v: new_v})
         return P.intersection(Polyhedron([Eq(v, -new_v)]))
 
-    def append_signal(self, segment) -> None:
+    def update_signal(self, segment) -> None:
         # transform the signal into a robustness polyhedron
         segment = {sig: segment_to_rph(sig, seg) for sig, seg in segment.items()}
-        print(
-            "NEW SEGMENT:\n", "".join(f"{sig}: {seg}\n" for sig, seg in segment.items())
-        )
+        #print(
+        #    "NEW SEGMENT:\n",
+        #    "".join(f"{sig}: {seg} @ {seg.bounds()}\n" for sig, seg in segment.items()),
+        #)
         self._signal.append(segment)
+
+        # trim segments that are out of horizon
+        horizon = self._horizon
+        if horizon is None:
+            return
+
+        cur_time = next(iter(segment.values())).bounds()
+        limit = cur_time.start - horizon
+
+        keep_from = -1
+        for i in range(len(self._signal)):
+            B = next(iter(self._signal[i].values())).bounds()
+            if B.end >= limit:
+                keep_from = i
+                break;
+
+        if keep_from > 0:
+            self._signal = self._signal[keep_from:]
+
 
     # @trace_calls
     def update(
@@ -159,9 +195,7 @@ class OnlineMonitor:
                           the time constraints, that we might want to change in the future.
         """
         # add this new segment to the signal history (update P_f, Alg 1. line 5)
-        self.append_signal(segment)
-
-        # TODO: trim `self._signal` to the horizon
+        self.update_signal(segment)
 
         # compute current contstraints on variables
         # P = self._P_dom.intersection(time_interval)
@@ -592,7 +626,7 @@ class OfflineMonitor:
         self._horizon = horizon
 
     def signal(self):
-        mon = OnlineMonitor(self._formula)
+        mon = OnlineMonitor(self._formula, self._horizon)
         signal_names = self._trace.header()[1:]
         piecewise_signals: dict[str, TraceSegment] = {
             name: self._trace.piecewise_linear_signal(name) for name in signal_names
