@@ -17,8 +17,8 @@ class AstTransformer(Transformer):
 
     def timesub(self, items):
         assert len(items) == 2
-        assert isinstance(items[0], TimeTerm), items
-        assert isinstance(items[1], TimeTerm), items
+        assert isinstance(items[0], (TimeTerm, Constant)), items
+        assert isinstance(items[1], (TimeTerm, Constant)), items
         return TimeOp("-", items[0], items[1])
 
     def timemul(self, items):

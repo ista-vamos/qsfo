@@ -132,10 +132,11 @@ class SignalsTrace(list):
             reader = csv.reader(f)
             header_row =  next(reader)
             if signals:
-                signals = set(signals)
+                signals = set((s.value.strip() for s in signals))
+                signals.add(timevar)
                 header = [nm.strip() for nm in header_row if nm in signals]
             else:
-                header = [nm.strip() for nm in header_line.split(",")]
+                header = [nm.strip() for nm in header_row]
 
             if sampling is not None:
                 header = [str(timevar)] + header
@@ -147,21 +148,17 @@ class SignalsTrace(list):
                         f"Missing values on line {n+2}. Expected {N} values, got {len(vals)}"
                     )
 
-                # filter to give signals only
+                if sampling is not None:
+                    row = [n * sampling] + row
+
+                # filter to given signals only
                 if signals:
                     vals = {
-                        header[i]: float(row[i])
-                        for i in range(N)
-                        if header[i] in signals
+                        s: float(v) for s,v in zip(header, row)
+                        if s in signals
                     }
                 else:
-                    vals = {header[i]: float(vals[i]) for i in range(N)}
-
-                if sampling is not None:
-                    vals[timevar] = n * sampling
-                    assert len(vals) == N + 1
-                else:
-                    assert len(vals) == N
+                    vals = { s: float(v) for s,v in zip(header, row)}
 
                 tr.append(vals)
 
