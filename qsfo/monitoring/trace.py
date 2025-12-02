@@ -130,7 +130,7 @@ class SignalsTrace(list):
         """
         with open(path, "r") as f:
             reader = csv.reader(f)
-            header_row =  next(reader)
+            header_row = next(reader)
             if signals:
                 signals = set((s.value.strip() for s in signals))
                 signals.add(timevar)
@@ -141,7 +141,7 @@ class SignalsTrace(list):
             if sampling is not None:
                 header = [str(timevar)] + header
             tr = SignalsTrace(header, [])
-            N =  len(header_row)
+            N = len(header_row)
             for n, row in enumerate(reader):
                 if len(row) != N:
                     raise RuntimeError(
@@ -153,12 +153,9 @@ class SignalsTrace(list):
 
                 # filter to given signals only
                 if signals:
-                    vals = {
-                        s: float(v) for s,v in zip(header, row)
-                        if s in signals
-                    }
+                    vals = {s: float(v) for s, v in zip(header, row) if s in signals}
                 else:
-                    vals = { s: float(v) for s,v in zip(header, row)}
+                    vals = {s: float(v) for s, v in zip(header, row)}
 
                 tr.append(vals)
 

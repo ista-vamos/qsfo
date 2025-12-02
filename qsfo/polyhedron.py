@@ -375,6 +375,13 @@ class Polyhedron:
         assert (
             not self._constraints or self._vars
         ), f"Have constraints but no vars: {self}"
+        # assert constraints != [True] or self._vars, "Universal poly that became empty, use variables="
+
+        if constraints and not self._constraints and not self._vars:
+            # we had constraints but they reduced to True which was dropped..
+            raise RuntimeError(
+                "Universal poly that became empty because we do not know variables"
+            )
 
         # self.reduce()
 

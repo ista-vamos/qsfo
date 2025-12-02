@@ -213,10 +213,9 @@ class OnlineMonitor:
         start_time = time.process_time()
         R = self.formula_robust(self._formula, P_seg)
         end_time = time.process_time()
-        assert R, "Got no robustness polyhedra"
 
         # add_to_trace("R", *R)
-        if len(R) == 0:
+        if not R:
             # the formula describes something that is before time 0
             R = RobustnessPolyhedraList(
                 (RobustnessPolyhedron(NEG_INFTY, time_interval),)
@@ -398,16 +397,25 @@ class OnlineMonitor:
         elif isinstance(formula, (LessThan, LessOrEqual)):
             lhs = self.term(chld[0])
             rhs = self.term(chld[1])
-            return RobustnessPolyhedraList(
-                (
-                    RobustnessPolyhedron(
-                        r.robustness() - l.robustness(),
-                        l.poly().intersection(r.poly()).intersection(P_seg),
-                    )
-                    for l in lhs
-                    for r in rhs
-                )
-            )
+            # return RobustnessPolyhedraList(
+            #    (
+            #        RobustnessPolyhedron(
+            #            r.robustness() - l.robustness(),
+            #            l.poly().intersection(r.poly()).intersection(P_seg),
+            #        )
+            #        for l in lhs
+            #        for r in rhs
+            #    )
+            # )
+
+            res = []
+            for l, r in ((l, r) for l in lhs for r in rhs):
+                poly = l.poly().intersection(r.poly()).reduce()
+                if poly.is_empty():
+                    continue
+                res.append(RobustnessPolyhedron(r.robustness() - l.robustness(), poly))
+
+            return RobustnessPolyhedraList(res)
 
         elif isinstance(formula, And):
             R1 = self.formula_robust(chld[0], P_seg)
@@ -419,8 +427,12 @@ class OnlineMonitor:
                     if I.is_empty():
                         continue
                     r_l, r_r = lhs.robustness(), rhs.robustness()
-                    P1 = I.intersection(Polyhedron([r_l < r_r])).reduce()
-                    P2 = I.intersection(Polyhedron([r_r <= r_l])).reduce()
+                    P1 = I.intersection(
+                        Polyhedron([r_l < r_r], variables=I.vars())
+                    ).reduce()
+                    P2 = I.intersection(
+                        Polyhedron([r_l >= r_r], variables=I.vars())
+                    ).reduce()
                     if not P1.is_empty():
                         res.append(RobustnessPolyhedron(r_l, P1))
                     if not P2.is_empty():
@@ -483,16 +495,16 @@ class OnlineMonitor:
                 assert rpl_0 is not None, formula
                 assert rpl_1 is not None, formula
 
-                return RobustnessPolyhedraList(
-                    (
-                        RobustnessPolyhedron(
-                            robustness_poly_op(op, lhs, rhs),
-                            lhs.poly().intersection(rhs.poly()),
-                        )
-                        for lhs in rpl_0
-                        for rhs in rpl_1
+                res = []
+                for lhs, rhs in ((lhs, rhs) for lhs in rpl_0 for rhs in rpl_1):
+                    poly = lhs.poly().intersection(rhs.poly()).reduce()
+                    if poly.is_empty():
+                        continue
+                    res.append(
+                        RobustnessPolyhedron(robustness_poly_op(op, lhs, rhs), poly)
                     )
-                )
+
+                return RobustnessPolyhedraList(res)
             if op == "*":
                 assert len(formula.children()) == 2, formula
                 children = formula.children()

@@ -33,7 +33,10 @@ def parse_cmd():
     )
 
     parser.add_argument(
-        "--no-stdout", action='store_true', default=False, help="Write not output to stdout"
+        "--no-stdout",
+        action="store_true",
+        default=False,
+        help="Write not output to stdout",
     )
 
     return parser.parse_args()
