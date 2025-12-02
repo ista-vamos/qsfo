@@ -32,6 +32,10 @@ def parse_cmd():
         "--csv", type=str, default=None, help="Write output to the csv file"
     )
 
+    parser.add_argument(
+        "--no-stdout", action='store_true', default=False, help="Write not output to stdout"
+    )
+
     return parser.parse_args()
 
 
@@ -40,12 +44,13 @@ if __name__ == "__main__":
     parser = Parser()
     formula = parser.parse(args.formula)
 
-    print("--- Parsed formula ---")
-    print(formula)
-    print("------")
-    print("Free variables: ", set(map(str, formula.free_variables())))
-    print("Bound variables: ", set(map(str, formula.bound_variables())))
-    print("Signals: ", set(map(lambda s: s.name(), formula.signals())))
+    if not args.no_stdout:
+        print("--- Parsed formula ---")
+        print(formula)
+        print("------")
+        print("Free variables: ", set(map(str, formula.free_variables())))
+        print("Bound variables: ", set(map(str, formula.bound_variables())))
+        print("Signals: ", set(map(lambda s: s.name(), formula.signals())))
 
     trace_file = args.input
     if trace_file.endswith(".csv"):
@@ -88,14 +93,16 @@ if __name__ == "__main__":
 
         mon = OfflineMonitor(formula, trace, args.horizon)
         mon_signal = mon.signal_with_stats()
-        print("Monitoring signal:")
+        if not args.no_stdout:
+            print("Monitoring signal:")
         for (sig, t_r, t_m), intv in mon_signal:
             for expr, sub_intv in sig:
                 # C = [f'{(c.lhs/FRACTIONS_PREC).evalf()} {c.rel_op} {(c.rhs/FRACTIONS_PREC).evalf()}' for c in s.constraints()]
                 # print(f'  {sig.var()} ==> {C}')
 
                 # get the defining equality for the robustness value
-                print(f"  {expr} @ {sub_intv}")
+                if not args.no_stdout:
+                    print(f"  {expr} @ {sub_intv}")
 
                 if csv:
                     t = sub_intv.start
