@@ -1,5 +1,6 @@
 from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval, frac
 from sympy import Eq
+import csv
 
 # from fractions import Fraction
 
@@ -127,35 +128,40 @@ class SignalsTrace(list):
 
         If `signals` is non-empty, consider only signals in `signals`.
         """
-        # TODO: use `csv` package
         with open(path, "r") as f:
+            reader = csv.reader(f)
+            header_row =  next(reader)
             if signals:
-                header = [nm.strip() for nm in f.readline().split(",") if nm in signals]
+                signals = set(signals)
+                header = [nm.strip() for nm in header_row if nm in signals]
             else:
-                header = [nm.strip() for nm in f.readline().split(",")]
+                header = [nm.strip() for nm in header_line.split(",")]
 
             if sampling is not None:
                 header = [str(timevar)] + header
             tr = SignalsTrace(header, [])
-            N = len(header)
-            for n, line in enumerate(f):
-                vals = line.split(",")
+            N =  len(header_row)
+            for n, row in enumerate(reader):
+                if len(row) != N:
+                    raise RuntimeError(
+                        f"Missing values on line {n+2}. Expected {N} values, got {len(vals)}"
+                    )
+
+                # filter to give signals only
                 if signals:
                     vals = {
-                        header[i].strip(): float(vals[i])
+                        header[i]: float(row[i])
                         for i in range(N)
                         if header[i] in signals
                     }
                 else:
-                    vals = {header[i].strip(): float(vals[i]) for i in range(N)}
+                    vals = {header[i]: float(vals[i]) for i in range(N)}
 
                 if sampling is not None:
                     vals[timevar] = n * sampling
-
-                if len(vals) != N:
-                    raise RuntimeError(
-                        f"Missing values on line {n+2}. Expected {N} values, got {len(vals)}"
-                    )
+                    assert len(vals) == N + 1
+                else:
+                    assert len(vals) == N
 
                 tr.append(vals)
 
