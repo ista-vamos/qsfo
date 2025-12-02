@@ -5,8 +5,9 @@ import argparse
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
 from qsfo.polyhedron import solve_for_variable, FRACTIONS_PREC, Polyhedron
+from csv import writer as csv_writer
 
-from sympy import Eq, solve
+from sympy import Eq, solve, Symbol
 
 
 def parse_cmd():
@@ -18,10 +19,17 @@ def parse_cmd():
 
     # Optional arguments
     parser.add_argument(
-        "--samp", type=float, default=None, help="Optional sampling interval (float)"
+        "--samp",
+        type=float,
+        default=None,
+        help="Optional sampling interval (float) for inputs that do not contain the time variable `t` explicitely",
     )
     parser.add_argument(
         "--horizon", type=float, default=None, help="Optional horizon value (float)"
+    )
+
+    parser.add_argument(
+        "--csv", type=str, default=None, help="Write output to the csv file"
     )
 
     return parser.parse_args()
@@ -57,6 +65,14 @@ if __name__ == "__main__":
     #    print(f"For {v}:")
     #    print([str(p) for p in trace.piecewise_linear_signal(v)])
     # print("--- ---")
+    if args.csv is None:
+        csv = None
+    else:
+        csvfile = open(args.csv, "w")
+        csv = csv_writer(csvfile)
+        csv.writerow(
+            ["intv_start", "intv_end", "expr", "t_r", "t_m", "r_start", "r_end"]
+        )
 
     if sys.argv[0].startswith("bool"):
         raise NotImplementedError("Boolean monitoring is broken atm")
@@ -71,13 +87,29 @@ if __name__ == "__main__":
         from qsfo.monitoring.quantitative import OfflineMonitor
 
         mon = OfflineMonitor(formula, trace, args.horizon)
-        mon_signal = mon.signal()
+        mon_signal = mon.signal_with_stats()
         print("Monitoring signal:")
-        for sig in mon_signal:
-            print("Robustness:")
-            for s in sig:
+        for (sig, t_r, t_m), intv in mon_signal:
+            for expr, sub_intv in sig:
                 # C = [f'{(c.lhs/FRACTIONS_PREC).evalf()} {c.rel_op} {(c.rhs/FRACTIONS_PREC).evalf()}' for c in s.constraints()]
                 # print(f'  {sig.var()} ==> {C}')
 
                 # get the defining equality for the robustness value
-                print(f"  {s[0]} @ {s[1]}")
+                print(f"  {expr} @ {sub_intv}")
+
+                if csv:
+                    t = sub_intv.start
+                    r_start = expr if isinstance(expr, float) else eval(str(expr))
+                    t = sub_intv.end
+                    r_end = expr if isinstance(expr, float) else eval(str(expr))
+                    csv.writerow(
+                        [
+                            sub_intv.start,
+                            sub_intv.end,
+                            f"'{expr}'",
+                            t_r,
+                            t_m,
+                            r_start,
+                            r_end,
+                        ]
+                    )

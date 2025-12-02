@@ -26,7 +26,7 @@ from sympy.core.numbers import Infinity, NegativeInfinity
 
 from qsfo.dbg import trace_calls, add_to_trace
 
-FRACTIONS_PREC = 10
+FRACTIONS_PREC = 1000000
 
 
 class Var(Symbol):

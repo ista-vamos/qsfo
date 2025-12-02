@@ -11,8 +11,11 @@ from qsfo.polyhedron import (
     solve_for_variable,
     NO_BOUNDS,
     Interval,
+    frac,
 )
-from sympy import And, Eq, S, Or
+
+# import And as AND, to avoid conflict with qsfo.formula.And
+from sympy import And as AND, Eq, S, Or
 from qsfo.dbg import trace_calls, add_to_trace
 
 
@@ -121,7 +124,7 @@ class OnlineMonitor:
     def __init__(self, formula: Formula, horizon: float = None):
         self._formula: Formula = formula
         # the signal history up to the horizon (P_f)
-        self._signal: list[dict[str, TraceSegment]] = []
+        self._signal: list[dict[str, RobustnessTraceSegment]] = []
         # at this moment, we hardcode that our free time variable is 't'
         self.timevar = Var("t")
         self._horizon = horizon
@@ -165,10 +168,10 @@ class OnlineMonitor:
     def update_signal(self, segment) -> None:
         # transform the signal into a robustness polyhedron
         segment = {sig: segment_to_rph(sig, seg) for sig, seg in segment.items()}
-        #print(
+        # print(
         #    "NEW SEGMENT:\n",
         #    "".join(f"{sig}: {seg} @ {seg.bounds()}\n" for sig, seg in segment.items()),
-        #)
+        # )
         self._signal.append(segment)
 
         # trim segments that are out of horizon
@@ -184,15 +187,14 @@ class OnlineMonitor:
             B = next(iter(self._signal[i].values())).bounds()
             if B.end >= limit:
                 keep_from = i
-                break;
+                break
 
         if keep_from > 0:
             self._signal = self._signal[keep_from:]
 
-
     # @trace_calls
     def update(
-        self, segment: dict, time_interval: Polyhedron
+        self, segment: dict, time_interval: Polyhedron, stats: bool = False
     ) -> RobustnessPolyhedraList:
         """
         :param: segment - new segment (w_i in the paper), it is a dict that maps
@@ -214,6 +216,11 @@ class OnlineMonitor:
         assert R, "Got no robustness polyhedra"
 
         # add_to_trace("R", *R)
+        if len(R) == 0:
+            # the formula describes something that is before time 0
+            R = RobustnessPolyhedraList(
+                (RobustnessPolyhedron(NEG_INFTY, time_interval),)
+            )
 
         # compute the maximum robustness over the polyhedra
         start_time_2 = time.process_time()
@@ -222,12 +229,14 @@ class OnlineMonitor:
 
         r_time = end_time - start_time
         m_time = end_time_2 - start_time_2
-        self._last_time_measure = (r_time, m_time)
-        print(
-            f"\033[0;32m[time: robustness + maxima]: {r_time} + {m_time} = {r_time + m_time}\033[0m"
-        )
+        # self._last_time_measure = (r_time, m_time)
+        # print(
+        #    f"\033[0;32m[time: robustness + maxima]: {r_time} + {m_time} = {r_time + m_time}\033[0m"
+        # )
 
         M = self.simplify_maxima(M)
+        if stats:
+            return M, r_time, m_time
         return M
 
     # def compute_maxima_region(self, i: int, R):
@@ -276,10 +285,10 @@ class OnlineMonitor:
         while wbg:
             P = wbg.pop()
             # add_to_trace(
-            #    "M", *(f"{m} covers {And(*m.poly().constraints()).as_set()}" for m in M)
+            #    "M", *(f"{m} covers {AND(*m.poly().constraints()).as_set()}" for m in M)
             # )
             # add_to_trace(
-            #    "  together covers", Or(*(And(*m.poly().constraints()) for m in M)).as_set()
+            #    "  together covers", Or(*(AND(*m.poly().constraints()) for m in M)).as_set()
             # )
             # if __debug__:
             #    for i in range(len(M)):
@@ -348,7 +357,7 @@ class OnlineMonitor:
     def simplify_maxima(self, M):
         map = dict()
         for R in M:
-            interval = And(*R.poly().constraints()).as_set()
+            interval = AND(*R.poly().constraints()).as_set()
             rob = R.robustness()
             cur = map.get(rob)
             if cur is None:
@@ -400,10 +409,23 @@ class OnlineMonitor:
                 )
             )
 
-        # elif isinstance(formula, Or):
-        #    P1, sig1 = self.formula_robust(chld[0], P)
-        #    P2, sig2 = self.formula_robust(chld[1], P)
-        #    raise NotImplementedError()
+        elif isinstance(formula, And):
+            R1 = self.formula_robust(chld[0], P_seg)
+            R2 = self.formula_robust(chld[1], P_seg)
+            res = []
+            for lhs in R1:
+                for rhs in R2:
+                    I = lhs.poly().intersection(rhs.poly()).reduce()
+                    if I.is_empty():
+                        continue
+                    r_l, r_r = lhs.robustness(), rhs.robustness()
+                    P1 = I.intersection(Polyhedron([r_l < r_r])).reduce()
+                    P2 = I.intersection(Polyhedron([r_r <= r_l])).reduce()
+                    if not P1.is_empty():
+                        res.append(RobustnessPolyhedron(r_l, P1))
+                    if not P2.is_empty():
+                        res.append(RobustnessPolyhedron(r_r, P2))
+            return RobustnessPolyhedraList(res)
         # elif isinstance(formula, And):
         #    newv = self._fresh_variable()
         #    raise NotImplementedError()
@@ -426,7 +448,7 @@ class OnlineMonitor:
             # The constraints are a universe poly for the time variable (we cannot put there the empty polyhedron
             # as that would mean that the robustness is void)
             return RobustnessPolyhedron(
-                formula.value(),
+                frac(formula.value()),
                 Polyhedron(
                     [],
                     variables=set((self.timevar,)),
@@ -471,11 +493,13 @@ class OnlineMonitor:
                         for rhs in rpl_1
                     )
                 )
-            if op == '*':
+            if op == "*":
                 assert len(formula.children()) == 2, formula
                 children = formula.children()
 
-                assert isinstance(children[0], Constant) or isinstance(children[1], Constant)
+                assert isinstance(children[0], Constant) or isinstance(
+                    children[1], Constant
+                )
 
                 if isinstance(children[0], Constant):
                     # 1 on the left can be ignored for multiplication
@@ -698,3 +722,25 @@ class OfflineMonitor:
             )
 
             yield mon.update(segment, time_interval)
+
+    def signal_with_stats(self):
+        mon = OnlineMonitor(self._formula, self._horizon)
+        signal_names = self._trace.header()[1:]
+        piecewise_signals: dict[str, TraceSegment] = {
+            name: self._trace.piecewise_linear_signal(name) for name in signal_names
+        }
+        timevar: Var = self._trace.timevar()
+
+        for n in range(len(self._trace) - 1):
+            # merge constraints for all signals together,
+            # the algorithm asssumes it
+            segment: dict[str, TraceSegment] = {
+                name: piecewise_signals[name][n] for name in signal_names
+            }
+            # the time interval is the same for all signals, so just take one signal
+            time_interval: TraceSegment = piecewise_signals[signal_names[0]][n]
+            time_interval: Polyhedron = time_interval.time_bounds_as_ph().substitute(
+                {time_interval.timevar(): mon.timevar}
+            )
+
+            yield mon.update(segment, time_interval, stats=True), time_interval

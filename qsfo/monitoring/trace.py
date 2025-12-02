@@ -1,4 +1,4 @@
-from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval
+from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval, frac
 from sympy import Eq
 
 # from fractions import Fraction
@@ -193,17 +193,17 @@ class SignalsTrace(list):
         last = self[0]
         for i in range(1, N):
             cur = self[i]
-            # a = Rational(cur[varname] - last[varname]) / Rational(cur[t] - last[t])
-            # b = Rational(last[varname]) - a * Rational(last[t])
-            a = (cur[varname] - last[varname]) / (cur[t] - last[t])
-            b = (last[varname]) - a * (last[t])
+            a = frac(cur[varname] - last[varname]) / frac(cur[t] - last[t])
+            b = frac(last[varname]) - a * frac(last[t])
+            # a = (cur[varname] - last[varname]) / (cur[t] - last[t])
+            # b = (last[varname]) - a * (last[t])
             line = a * timevar + b
             sig.append(
                 TraceSegment(
                     timevar,
                     constraints=[Eq(line - resvar, 0)],
-                    bounds=Interval(last[t], cur[t], ropen=True),
-                    # bounds=Interval(Rational(last[t]), Rational(cur[t]), ropen=True),
+                    # bounds=Interval(last[t], cur[t], ropen=True),
+                    bounds=Interval(frac(last[t]), frac(cur[t]), ropen=True),
                 ).connstraint_by_time_bounds()
             )
             last = cur
