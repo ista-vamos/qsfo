@@ -7,7 +7,7 @@ from qsfo.parser import Parser
 from qsfo.polyhedron import solve_for_variable, FRACTIONS_PREC, Polyhedron
 from csv import writer as csv_writer
 
-from sympy import Eq, solve, Symbol
+from sympy import Eq, solve, Symbol, FiniteSet
 
 
 def parse_cmd():
@@ -108,14 +108,19 @@ if __name__ == "__main__":
                     print(f"  {expr} @ {sub_intv}")
 
                 if csv:
-                    t = sub_intv.start
+                    if isinstance(sub_intv, FiniteSet):
+                        t_start = t_end = next(iter(sub_intv))
+                    else:
+                        t_start, t_end = sub_intv.start, sub_intv.end
+
+                    t = t_start
                     r_start = expr if isinstance(expr, float) else eval(str(expr))
-                    t = sub_intv.end
+                    t = t_end
                     r_end = expr if isinstance(expr, float) else eval(str(expr))
                     csv.writerow(
                         [
-                            sub_intv.start,
-                            sub_intv.end,
+                            t_start,
+                            t_end,
                             f"'{expr}'",
                             t_r,
                             t_m,
