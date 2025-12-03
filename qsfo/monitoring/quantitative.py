@@ -366,7 +366,7 @@ class OnlineMonitor:
 
         return [(r, C) for r, C in map.items()]
 
-    # @trace_calls
+    #@trace_calls
     def formula_robust(self, formula, P_seg) -> RobustnessPolyhedraList:
         """
         Compute the robustness of the formula `self._formula`
@@ -383,17 +383,11 @@ class OnlineMonitor:
             P: RobustnessPolyhedraList = self.formula_robust(chld[0], P_seg)
             return self.eliminate_by_sup(P, r, r_bounds)
         elif isinstance(formula, Not):
-            raise NotImplementedError("RobustnessPolyhedra")
             assert len(chld) == 1, "Negation must have only one sub-formula"
             newP = self.formula_robust(chld[0], P_seg)
-            newv = self._fresh_variable()
-
-            phl: PolyhedraList = (
-                newP.intersection(Polyhedron([Eq(newv, -newP.var())]))
-                .eliminate(newP.var())
-                .reduce()
+            return RobustnessPolyhedraList(
+                RobustnessPolyhedron(-r.robustness(), r.poly()) for r in newP
             )
-            return FormulaPolyhedraList(newv, *phl)
         elif isinstance(formula, (LessThan, LessOrEqual)):
             lhs = self.term(chld[0])
             rhs = self.term(chld[1])
@@ -450,10 +444,10 @@ class OnlineMonitor:
                         continue
                     r_l, r_r = lhs.robustness(), rhs.robustness()
                     P1 = I.intersection(
-                        Polyhedron([r_l > r_r], variables=I.vars())
+                        Polyhedron([r_l >= r_r], variables=I.vars())
                     ).reduce()
                     P2 = I.intersection(
-                        Polyhedron([r_l <= r_r], variables=I.vars())
+                        Polyhedron([r_l < r_r], variables=I.vars())
                     ).reduce()
                     if not P1.is_empty():
                         res.append(RobustnessPolyhedron(r_l, P1))
