@@ -15,7 +15,7 @@ from qsfo.polyhedron import (
 )
 
 # import And as AND, to avoid conflict with qsfo.formula.And
-from sympy import And as AND, Eq, S, Or
+from sympy import And as AND, Eq, S
 from qsfo.dbg import trace_calls, add_to_trace
 
 
@@ -287,7 +287,7 @@ class OnlineMonitor:
             #    "M", *(f"{m} covers {AND(*m.poly().constraints()).as_set()}" for m in M)
             # )
             # add_to_trace(
-            #    "  together covers", Or(*(AND(*m.poly().constraints()) for m in M)).as_set()
+            #    "  together covers", OR(*(AND(*m.poly().constraints()) for m in M)).as_set()
             # )
             # if __debug__:
             #    for i in range(len(M)):
@@ -438,6 +438,29 @@ class OnlineMonitor:
                     if not P2.is_empty():
                         res.append(RobustnessPolyhedron(r_r, P2))
             return RobustnessPolyhedraList(res)
+
+        elif isinstance(formula, Or):
+            R1 = self.formula_robust(chld[0], P_seg)
+            R2 = self.formula_robust(chld[1], P_seg)
+            res = []
+            for lhs in R1:
+                for rhs in R2:
+                    I = lhs.poly().intersection(rhs.poly()).reduce()
+                    if I.is_empty():
+                        continue
+                    r_l, r_r = lhs.robustness(), rhs.robustness()
+                    P1 = I.intersection(
+                        Polyhedron([r_l > r_r], variables=I.vars())
+                    ).reduce()
+                    P2 = I.intersection(
+                        Polyhedron([r_l <= r_r], variables=I.vars())
+                    ).reduce()
+                    if not P1.is_empty():
+                        res.append(RobustnessPolyhedron(r_l, P1))
+                    if not P2.is_empty():
+                        res.append(RobustnessPolyhedron(r_r, P2))
+            return RobustnessPolyhedraList(res)
+
         # elif isinstance(formula, And):
         #    newv = self._fresh_variable()
         #    raise NotImplementedError()
