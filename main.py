@@ -4,10 +4,10 @@ import argparse
 
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
-from qsfo.polyhedron import solve_for_variable, FRACTIONS_PREC, Polyhedron
+from qsfo.polyhedron import solve_for_variable, FRACTIONS_PREC, Polyhedron, Interval
 from csv import writer as csv_writer
 
-from sympy import Eq, solve, Symbol, FiniteSet
+from sympy import Eq, solve, Symbol, FiniteSet, And as AND
 
 
 def parse_cmd():
@@ -33,6 +33,13 @@ def parse_cmd():
     )
 
     parser.add_argument(
+        "--csv-with-robustness",
+        action="store_true",
+        default=False,
+        help="Write robustness signal into CSV (makes sense only if the len of the signal is always 1)",
+    )
+
+    parser.add_argument(
         "--no-stdout",
         action="store_true",
         default=False,
@@ -40,6 +47,18 @@ def parse_cmd():
     )
 
     return parser.parse_args()
+
+
+def poly_as_intv(poly):
+    intv = AND(*poly.constraints()).as_set()
+    if isinstance(intv, FiniteSet):
+        t_start = t_end = next(iter(intv))
+        l_open, r_open = False, False
+    else:
+        t_start, t_end = intv.start, intv.end
+        l_open, r_open = intv.left_open, intv.right_open
+
+    return Interval(t_start, t_end, l_open, r_open)
 
 
 if __name__ == "__main__":
@@ -78,9 +97,12 @@ if __name__ == "__main__":
     else:
         csvfile = open(args.csv, "w")
         csv = csv_writer(csvfile)
-        csv.writerow(
-            ["intv_start", "intv_end", "expr", "t_r", "t_m", "r_start", "r_end"]
-        )
+        if args.csv_with_robustness:
+            csv.writerow(
+                ["intv_start", "intv_end", "expr", "r_start", "r_end", "t_r", "t_m"]
+            )
+        else:
+            csv.writerow(["intv_start", "intv_end", "t_r", "t_m"])
 
     if sys.argv[0].startswith("bool"):
         raise NotImplementedError("Boolean monitoring is broken atm")
@@ -99,15 +121,31 @@ if __name__ == "__main__":
         if not args.no_stdout:
             print("Monitoring signal:")
         for (sig, t_r, t_m), intv in mon_signal:
+            intv = poly_as_intv(intv)
+            if not args.no_stdout:
+                print(f"####  t ∈ {intv}")
+
+            if csv and not args.csv_with_robustness:
+                csv.writerow(
+                    [
+                        intv.start,
+                        intv.end,
+                        t_r,
+                        t_m,
+                    ]
+                )
+
+            if args.no_stdout and not (csv and args.csv_with_robustness):
+                # nothing to do
+                continue
+
             for expr, sub_intv in sig:
-                # C = [f'{(c.lhs/FRACTIONS_PREC).evalf()} {c.rel_op} {(c.rhs/FRACTIONS_PREC).evalf()}' for c in s.constraints()]
-                # print(f'  {sig.var()} ==> {C}')
 
                 # get the defining equality for the robustness value
                 if not args.no_stdout:
                     print(f"  {expr} @ {sub_intv}")
 
-                if csv:
+                if csv and args.csv_with_robustness:
                     if isinstance(sub_intv, FiniteSet):
                         t_start = t_end = next(iter(sub_intv))
                     else:
@@ -122,9 +160,12 @@ if __name__ == "__main__":
                             t_start,
                             t_end,
                             f"'{expr}'",
-                            t_r,
-                            t_m,
                             r_start,
                             r_end,
+                            t_r,
+                            t_m,
                         ]
                     )
+
+            if not args.no_stdout:
+                print("")

@@ -366,7 +366,7 @@ class OnlineMonitor:
 
         return [(r, C) for r, C in map.items()]
 
-    #@trace_calls
+    # @trace_calls
     def formula_robust(self, formula, P_seg) -> RobustnessPolyhedraList:
         """
         Compute the robustness of the formula `self._formula`
