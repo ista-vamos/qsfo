@@ -506,7 +506,7 @@ class Polyhedron:
         return Polyhedron.from_ppl_polyhedron(poly, variables)
 
     # @trace_calls
-    def eliminate(self, var: Var, do_simplify=False, restore_eqs=False):
+    def eliminate(self, var: Var, do_simplify=False, restore_eqs=False) -> "Polyhedron":
         """
         Eliminate the variable `var` from this polyhedron.
         We use Fourier-Motzkin elimination for now.

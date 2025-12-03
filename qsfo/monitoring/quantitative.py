@@ -624,16 +624,18 @@ class OnlineMonitor:
 
         return RobustnessPolyhedraList(P_res)
 
-    # @trace_calls
+    #@trace_calls
     def parametric_lp_maximize(
         self, P: Polyhedron, robustness_expr, x: Var
-    ) -> FormulaPolyhedraList:
+    ) -> RobustnessPolyhedraList:
         """
         `robustness_expr` is the current robustness expression
         `x` is the quantified variable
         """
         assert isinstance(P, Polyhedron), (P, type(P))
-        assert robustness_expr.has(x), (x, robustness_expr)
+        if not robustness_expr.has(x):
+            # the supremum is independent of `x`, just eliminate it
+            return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P.eliminate(x))])
 
         # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
         alpha, beta = split_coeff(robustness_expr, x)
