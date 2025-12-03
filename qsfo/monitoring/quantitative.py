@@ -522,6 +522,27 @@ class OnlineMonitor:
                     )
 
                 return RobustnessPolyhedraList(res)
+            if op == "abs":
+                assert len(formula.children()) == 1, formula
+
+                rpl: RobustnessPolyhedraList = self.term(formula.children()[0])
+                assert rpl is not None, formula
+
+                res = []
+                for R in rpl:
+                    poly = R.poly()
+                    I = poly.intersection(Polyhedron([R.robustness() >= 0], variables=poly.vars())).reduce()
+                    if not I.is_empty():
+                        res.append(
+                            RobustnessPolyhedron(R.robustness(), I)
+                        )
+                    I = poly.intersection(Polyhedron([R.robustness() < 0], variables=poly.vars())).reduce()
+                    if not I.is_empty():
+                        res.append(
+                            RobustnessPolyhedron(-R.robustness(), I)
+                        )
+
+                return RobustnessPolyhedraList(res)
             if op == "*":
                 assert len(formula.children()) == 2, formula
                 children = formula.children()
