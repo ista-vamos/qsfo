@@ -123,7 +123,7 @@ if __name__ == "__main__":
         for (sig, t_r, t_m), intv in mon_signal:
             intv = poly_as_intv(intv)
             if not args.no_stdout:
-                print(f"####  t ∈ {intv}")
+                print(f"####  t ∈ {intv} (computed in {t_r + t_m} sec)")
 
             if csv and not args.csv_with_robustness:
                 csv.writerow(
