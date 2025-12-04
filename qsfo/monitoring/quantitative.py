@@ -130,13 +130,7 @@ class OnlineMonitor:
         self._horizon = horizon
 
         # gather constraints from the formula and other known constraints that are valid universally
-        bounds = formula.get_constant_bounds()
-        bounds_C = []
-        for var, B in bounds:
-            var = Var(var.name())
-            bounds_C.append(B[0] <= var)
-            bounds_C.append(var <= B[1])
-        self._P_dom: Polyhedron | None = Polyhedron([self.timevar >= 0] + bounds_C)
+        self._P_dom: Polyhedron | None = Polyhedron([self.timevar >= 0])
 
         self._vars = {}
         # numbering for unnamed variables
@@ -381,7 +375,7 @@ class OnlineMonitor:
             q = formula.quantifier()
             r: Var = q.var().expr()
             r_bounds = q.bounds()
-            P: RobustnessPolyhedraList = self.formula_robust(chld[0], P_seg)
+            P: RobustnessPolyhedraList = self.formula_robust(chld[0], P_seg.intersection(Polyhedron([r_bounds[0] <= r, r <= r_bounds[1]])))
             return self.eliminate_by_sup(P, r, r_bounds)
         elif isinstance(formula, Not):
             assert len(chld) == 1, "Negation must have only one sub-formula"
