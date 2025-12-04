@@ -308,7 +308,7 @@ class OnlineMonitor:
                     elif r_P == NEG_INFTY:
                         newM.add(RobustnessPolyhedron(r_X, P_I))
                     elif r_X == INFTY:
-                        pass # unst constraint
+                        pass  # unst constraint
                     else:
                         P_r = P_I.intersection(Polyhedron([r_P >= r_X])).reduce()
                         if not P_r.is_empty():
@@ -377,7 +377,10 @@ class OnlineMonitor:
             q = formula.quantifier()
             r: Var = q.var().expr()
             r_bounds = q.bounds()
-            P: RobustnessPolyhedraList = self.formula_robust(chld[0], P_seg.intersection(Polyhedron([r_bounds[0] <= r, r <= r_bounds[1]])))
+            P: RobustnessPolyhedraList = self.formula_robust(
+                chld[0],
+                P_seg.intersection(Polyhedron([r_bounds[0] <= r, r <= r_bounds[1]])),
+            )
             return self.eliminate_by_sup(P, r, r_bounds)
         elif isinstance(formula, Not):
             assert len(chld) == 1, "Negation must have only one sub-formula"
@@ -401,7 +404,7 @@ class OnlineMonitor:
 
             res = []
             for l, r in ((l, r) for l in lhs for r in rhs):
-                #poly = l.poly().intersection(r.poly()).intersection(P_seg).reduce()
+                # poly = l.poly().intersection(r.poly()).intersection(P_seg).reduce()
                 poly = l.poly().intersection(r.poly()).reduce()
                 if poly.is_empty():
                     continue
@@ -430,7 +433,6 @@ class OnlineMonitor:
                         if not P1.is_empty():
                             res.append(RobustnessPolyhedron(r_l, P1))
 
-
                     if r_l == INFTY or r_r == NEG_INFTY:
                         res.append(RobustnessPolyhedron(r_r, I))
                     else:
@@ -455,7 +457,7 @@ class OnlineMonitor:
                     r_l, r_r = lhs.robustness(), rhs.robustness()
                     if r_l == INFTY or r_r == NEG_INFTY:
                         res.append(RobustnessPolyhedron(r_l, I))
-                    elif r_l == NEG_INFTY or r_r ==INFTY :
+                    elif r_l == NEG_INFTY or r_r == INFTY:
                         pass  # unsat constraints
                     else:
                         assert r_l not in (INFTY, NEG_INFTY)
@@ -468,7 +470,7 @@ class OnlineMonitor:
 
                     if r_l == NEG_INFTY or r_r == INFTY:
                         res.append(RobustnessPolyhedron(r_r, I))
-                    elif r_l == INFTY or r_r == NEG_INFTY :
+                    elif r_l == INFTY or r_r == NEG_INFTY:
                         pass  # unsat constraints
                     else:
                         assert r_l not in (INFTY, NEG_INFTY)
@@ -488,7 +490,7 @@ class OnlineMonitor:
                 f"Unhandled formula type '{type(formula)}': {formula}"
             )
 
-    #@trace_calls
+    # @trace_calls
     def term(self, formula: Formula, P_seg: Polyhedron) -> RobustnessPolyhedraList:
         """
         Compute robustness value (and constraints) for a term
@@ -556,16 +558,16 @@ class OnlineMonitor:
                 res = []
                 for R in rpl:
                     poly = R.poly()
-                    I = poly.intersection(Polyhedron([R.robustness() >= 0], variables=poly.vars())).reduce()
+                    I = poly.intersection(
+                        Polyhedron([R.robustness() >= 0], variables=poly.vars())
+                    ).reduce()
                     if not I.is_empty():
-                        res.append(
-                            RobustnessPolyhedron(R.robustness(), I)
-                        )
-                    I = poly.intersection(Polyhedron([R.robustness() < 0], variables=poly.vars())).reduce()
+                        res.append(RobustnessPolyhedron(R.robustness(), I))
+                    I = poly.intersection(
+                        Polyhedron([R.robustness() < 0], variables=poly.vars())
+                    ).reduce()
                     if not I.is_empty():
-                        res.append(
-                            RobustnessPolyhedron(-R.robustness(), I)
-                        )
+                        res.append(RobustnessPolyhedron(-R.robustness(), I))
 
                 return RobustnessPolyhedraList(res)
             if op == "*":
@@ -653,7 +655,7 @@ class OnlineMonitor:
 
         return RobustnessPolyhedraList(P_res)
 
-    #@trace_calls
+    # @trace_calls
     def parametric_lp_maximize(
         self, P: Polyhedron, robustness_expr, x: Var
     ) -> RobustnessPolyhedraList:
@@ -662,10 +664,10 @@ class OnlineMonitor:
         `x` is the quantified variable
         """
         assert isinstance(P, Polyhedron), (P, type(P))
-       #if not robustness_expr.has(x):
-       #    # the supremum is independent of `x`, just eliminate it
-       #    return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P.eliminate(x))])
-       # assert robustness_expr.has(x), (x, robustness_expr)
+        # if not robustness_expr.has(x):
+        #    # the supremum is independent of `x`, just eliminate it
+        #    return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P.eliminate(x))])
+        # assert robustness_expr.has(x), (x, robustness_expr)
         P_Y = P.eliminate(x)
 
         # get upper and lower bounds on `x`
@@ -674,7 +676,9 @@ class OnlineMonitor:
 
         # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
         if robustness_expr == INFTY:
-            return RobustnessPolyhedraList([RobustnessPolyhedron(INFTY, P_0.intersection(P_Y))])
+            return RobustnessPolyhedraList(
+                [RobustnessPolyhedron(INFTY, P_0.intersection(P_Y))]
+            )
         elif robustness_expr == NEG_INFTY:
             raise NotImplementedError("What to do now?")
         if not robustness_expr.has(x):
