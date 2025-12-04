@@ -695,11 +695,11 @@ class OnlineMonitor:
                 Q.append(RobustnessPolyhedron(beta, q))
                 # add_to_trace("G_zero", Q[-1])
 
-        q = (PolyhedraList(P_Y.complement()).intersection(P_0)).reduce()
-        if not q.is_empty():
-            for ph in q:
-                Q.append(RobustnessPolyhedron(NEG_INFTY, ph))
-                # add_to_trace("G_complement", Q[-1])
+        # q = (PolyhedraList(P_Y.complement()).intersection(P_0)).reduce()
+        # if not q.is_empty():
+        #     for ph in q:
+        #         Q.append(RobustnessPolyhedron(NEG_INFTY, ph))
+        #         # add_to_trace("G_complement", Q[-1])
 
         return RobustnessPolyhedraList(Q)
 
