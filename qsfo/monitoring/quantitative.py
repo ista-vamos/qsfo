@@ -307,6 +307,8 @@ class OnlineMonitor:
                         newM.add(RobustnessPolyhedron(r_P, P_I))
                     elif r_P == NEG_INFTY:
                         newM.add(RobustnessPolyhedron(r_X, P_I))
+                    elif r_X == INFTY:
+                        pass # unst constraint
                     else:
                         P_r = P_I.intersection(Polyhedron([r_P >= r_X])).reduce()
                         if not P_r.is_empty():
@@ -417,16 +419,28 @@ class OnlineMonitor:
                     if I.is_empty():
                         continue
                     r_l, r_r = lhs.robustness(), rhs.robustness()
-                    P1 = I.intersection(
-                        Polyhedron([r_l < r_r], variables=I.vars())
-                    ).reduce()
-                    P2 = I.intersection(
-                        Polyhedron([r_l >= r_r], variables=I.vars())
-                    ).reduce()
-                    if not P1.is_empty():
-                        res.append(RobustnessPolyhedron(r_l, P1))
-                    if not P2.is_empty():
-                        res.append(RobustnessPolyhedron(r_r, P2))
+                    if r_l == NEG_INFTY or r_r == INFTY:
+                        res.append(RobustnessPolyhedron(r_l, I))
+                    else:
+                        assert r_l not in (INFTY, NEG_INFTY)
+                        assert r_r not in (INFTY, NEG_INFTY)
+                        P1 = I.intersection(
+                            Polyhedron([r_l <= r_r], variables=I.vars())
+                        ).reduce()
+                        if not P1.is_empty():
+                            res.append(RobustnessPolyhedron(r_l, P1))
+
+
+                    if r_l == INFTY or r_r == NEG_INFTY:
+                        res.append(RobustnessPolyhedron(r_r, I))
+                    else:
+                        assert r_l not in (INFTY, NEG_INFTY)
+                        assert r_r not in (INFTY, NEG_INFTY)
+                        P2 = I.intersection(
+                            Polyhedron([r_l > r_r], variables=I.vars())
+                        ).reduce()
+                        if not P2.is_empty():
+                            res.append(RobustnessPolyhedron(r_r, P2))
             return RobustnessPolyhedraList(res)
 
         elif isinstance(formula, Or):
@@ -439,16 +453,31 @@ class OnlineMonitor:
                     if I.is_empty():
                         continue
                     r_l, r_r = lhs.robustness(), rhs.robustness()
-                    P1 = I.intersection(
-                        Polyhedron([r_l >= r_r], variables=I.vars())
-                    ).reduce()
-                    P2 = I.intersection(
-                        Polyhedron([r_l < r_r], variables=I.vars())
-                    ).reduce()
-                    if not P1.is_empty():
-                        res.append(RobustnessPolyhedron(r_l, P1))
-                    if not P2.is_empty():
-                        res.append(RobustnessPolyhedron(r_r, P2))
+                    if r_l == INFTY or r_r == NEG_INFTY:
+                        res.append(RobustnessPolyhedron(r_l, I))
+                    elif r_l == NEG_INFTY or r_r ==INFTY :
+                        pass  # unsat constraints
+                    else:
+                        assert r_l not in (INFTY, NEG_INFTY)
+                        assert r_r not in (INFTY, NEG_INFTY)
+                        P1 = I.intersection(
+                            Polyhedron([r_l >= r_r], variables=I.vars())
+                        ).reduce()
+                        if not P1.is_empty():
+                            res.append(RobustnessPolyhedron(r_l, P1))
+
+                    if r_l == NEG_INFTY or r_r == INFTY:
+                        res.append(RobustnessPolyhedron(r_r, I))
+                    elif r_l == INFTY or r_r == NEG_INFTY :
+                        pass  # unsat constraints
+                    else:
+                        assert r_l not in (INFTY, NEG_INFTY)
+                        assert r_r not in (INFTY, NEG_INFTY)
+                        P2 = I.intersection(
+                            Polyhedron([r_l < r_r], variables=I.vars())
+                        ).reduce()
+                        if not P2.is_empty():
+                            res.append(RobustnessPolyhedron(r_r, P2))
             return RobustnessPolyhedraList(res)
 
         # elif isinstance(formula, And):
@@ -459,7 +488,7 @@ class OnlineMonitor:
                 f"Unhandled formula type '{type(formula)}': {formula}"
             )
 
-    @trace_calls
+    #@trace_calls
     def term(self, formula: Formula, P_seg: Polyhedron) -> RobustnessPolyhedraList:
         """
         Compute robustness value (and constraints) for a term
