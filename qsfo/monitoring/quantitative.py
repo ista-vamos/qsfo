@@ -390,8 +390,8 @@ class OnlineMonitor:
                 RobustnessPolyhedron(-r.robustness(), r.poly()) for r in newP
             )
         elif isinstance(formula, (LessThan, LessOrEqual)):
-            lhs = self.term(chld[0])
-            rhs = self.term(chld[1])
+            lhs = self.term(chld[0], P_seg)
+            rhs = self.term(chld[1], P_seg)
             # return RobustnessPolyhedraList(
             #    (
             #        RobustnessPolyhedron(
@@ -405,7 +405,8 @@ class OnlineMonitor:
 
             res = []
             for l, r in ((l, r) for l in lhs for r in rhs):
-                poly = l.poly().intersection(r.poly()).intersection(P_seg).reduce()
+                #poly = l.poly().intersection(r.poly()).intersection(P_seg).reduce()
+                poly = l.poly().intersection(r.poly()).reduce()
                 if poly.is_empty():
                     continue
                 res.append(RobustnessPolyhedron(r.robustness() - l.robustness(), poly))
@@ -464,8 +465,8 @@ class OnlineMonitor:
                 f"Unhandled formula type '{type(formula)}': {formula}"
             )
 
-    # @trace_calls
-    def term(self, formula: Formula) -> RobustnessPolyhedraList:
+    @trace_calls
+    def term(self, formula: Formula, P_seg: Polyhedron) -> RobustnessPolyhedraList:
         """
         Compute robustness value (and constraints) for a term
         """
@@ -494,10 +495,10 @@ class OnlineMonitor:
                 if isinstance(children[0], Constant) and children[0].value() == 0:
                     # 0 on the left can be ignored for addition
                     if op == "+":
-                        return self.term(children[1])
+                        return self.term(children[1], P_seg)
                     else:
                         # otherwise we negate the value of the subterm
-                        lhs: RobustnessPolyhedraList = self.term(children[1])
+                        lhs: RobustnessPolyhedraList = self.term(children[1], P_seg)
                         return RobustnessPolyhedraList(
                             (
                                 RobustnessPolyhedron(-ph.robustness(), ph.poly())
@@ -506,10 +507,10 @@ class OnlineMonitor:
                         )
                 elif isinstance(children[1], Constant) and children[1].value() == 0:
                     # 0 on the right can be ignored for addition and substraction
-                    return self.term(children[0])
+                    return self.term(children[0], P_seg)
 
-                rpl_0: RobustnessPolyhedraList = self.term(children[0])
-                rpl_1: RobustnessPolyhedraList = self.term(children[1])
+                rpl_0: RobustnessPolyhedraList = self.term(children[0], P_seg)
+                rpl_1: RobustnessPolyhedraList = self.term(children[1], P_seg)
                 assert rpl_0 is not None, formula
                 assert rpl_1 is not None, formula
 
@@ -526,7 +527,7 @@ class OnlineMonitor:
             if op == "abs":
                 assert len(formula.children()) == 1, formula
 
-                rpl: RobustnessPolyhedraList = self.term(formula.children()[0])
+                rpl: RobustnessPolyhedraList = self.term(formula.children()[0], P_seg)
                 assert rpl is not None, formula
 
                 res = []
@@ -555,10 +556,10 @@ class OnlineMonitor:
                 if isinstance(children[0], Constant):
                     # 1 on the left can be ignored for multiplication
                     if children[0].value() == 1:
-                        return self.term(children[1])
+                        return self.term(children[1], P_seg)
                     elif children[0].value() == -1:
                         # otherwise we negate the value of the subterm
-                        lhs: RobustnessPolyhedraList = self.term(children[1])
+                        lhs: RobustnessPolyhedraList = self.term(children[1], P_seg)
                         return RobustnessPolyhedraList(
                             (
                                 RobustnessPolyhedron(-ph.robustness(), ph.poly())
@@ -568,9 +569,9 @@ class OnlineMonitor:
                     # TODO: should we do short path also for 0?
                 elif isinstance(children[1], Constant):
                     if children[1].value() == 1:
-                        return self.term(children[0])
+                        return self.term(children[0], P_seg)
                     elif children[1].value() == -1:
-                        rhs: RobustnessPolyhedraList = self.term(children[0])
+                        rhs: RobustnessPolyhedraList = self.term(children[0], P_seg)
                         return RobustnessPolyhedraList(
                             (
                                 RobustnessPolyhedron(-ph.robustness(), ph.poly())
@@ -578,8 +579,8 @@ class OnlineMonitor:
                             )
                         )
 
-                rpl_0: RobustnessPolyhedraList = self.term(children[0])
-                rpl_1: RobustnessPolyhedraList = self.term(children[1])
+                rpl_0: RobustnessPolyhedraList = self.term(children[0], P_seg)
+                rpl_1: RobustnessPolyhedraList = self.term(children[1], P_seg)
                 assert rpl_0 is not None, formula
                 assert rpl_1 is not None, formula
 
@@ -600,10 +601,14 @@ class OnlineMonitor:
             time_term: Term = formula.arg()
             # get the list of segments for the given signal
             segments = (elem[sig] for elem in self._signal)
-            segments = [
-                seg.substitute({seg.timevar(): time_term.expr()}) for seg in segments
-            ]
-            return RobustnessPolyhedraList(segments)
+            res = []
+            for seg in segments:
+                seg = seg.substitute({seg.timevar(): time_term.expr()})
+                poly = seg.poly().intersection(P_seg).reduce()
+                if poly.is_empty():
+                    continue
+                res.append(RobustnessPolyhedron(seg.robustness(), poly))
+            return RobustnessPolyhedraList(res)
         else:
             raise NotImplementedError(f"Translation of term not implemented: {formula}")
 
