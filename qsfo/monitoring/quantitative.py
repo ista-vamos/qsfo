@@ -639,17 +639,25 @@ class OnlineMonitor:
         `x` is the quantified variable
         """
         assert isinstance(P, Polyhedron), (P, type(P))
-        assert robustness_expr.has(x), (x, robustness_expr)
        #if not robustness_expr.has(x):
        #    # the supremum is independent of `x`, just eliminate it
        #    return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P.eliminate(x))])
-
-        # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
-        alpha, beta = split_coeff(robustness_expr, x)
+       # assert robustness_expr.has(x), (x, robustness_expr)
+        P_Y = P.eliminate(x)
 
         # get upper and lower bounds on `x`
         L, U, P_0 = isolate_bounds(P, x)
-        P_Y = P.eliminate(x)
+        assert not P_0.is_empty()
+
+        # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
+        if robustness_expr == INFTY:
+            return RobustnessPolyhedraList([RobustnessPolyhedron(INFTY, P_0.intersection(P_Y))])
+        elif robustness_expr == NEG_INFTY:
+            raise NotImplementedError("What to do now?")
+        if not robustness_expr.has(x):
+            alpha, beta = 0, robustness_expr
+        else:
+            alpha, beta = split_coeff(robustness_expr, x)
 
         G_pos = P_0.intersection(Polyhedron([alpha > 0], variables=P_0.vars())).reduce()
         G_neg = P_0.intersection(Polyhedron([alpha < 0], variables=P_0.vars())).reduce()
