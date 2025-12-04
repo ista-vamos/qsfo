@@ -633,9 +633,10 @@ class OnlineMonitor:
         `x` is the quantified variable
         """
         assert isinstance(P, Polyhedron), (P, type(P))
-        if not robustness_expr.has(x):
-            # the supremum is independent of `x`, just eliminate it
-            return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P.eliminate(x))])
+        assert robustness_expr.has(x), (x, robustness_expr)
+       #if not robustness_expr.has(x):
+       #    # the supremum is independent of `x`, just eliminate it
+       #    return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P.eliminate(x))])
 
         # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
         alpha, beta = split_coeff(robustness_expr, x)
