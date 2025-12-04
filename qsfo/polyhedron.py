@@ -395,15 +395,15 @@ class Polyhedron:
                 continue
             elif c == False:
                 return False
-            sym, B = _get_bounds(c)
-            if sym is not None:
-                B = bounds.get(sym, NO_BOUNDS).intersect(B)
-                if B == EmptySet:
-                    # unsat constraints
-                    return False
-
-                bounds[sym] = B
-                continue
+           #sym, B = _get_bounds(c)
+           #if sym is not None:
+           #    B = bounds.get(sym, NO_BOUNDS).intersect(B)
+           #    if B == EmptySet:
+           #        # unsat constraints
+           #        return False
+           #
+           #    bounds[sym] = B
+           #    continue
 
             # if we have no bound, just copy the constraint
             self._constraints.add(c)
