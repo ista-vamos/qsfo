@@ -38,6 +38,9 @@ class Formula:
     def children(self):
         return self._children
 
+    def get_constant_bounds(self):
+        return [x for c in self._children for x in c.get_constant_bounds() ]
+
     def visit_dfs(self, fn):
         def _visit(node: Formula, lvl):
             for c in node._children:
@@ -397,6 +400,11 @@ class Exists(Formula):
 
     def quantifier(self):
         return self._quantifier
+
+    def get_constant_bounds(self):
+        bounds = super().get_constant_bounds()
+        q = self._quantifier
+        return bounds + [(q.var(), q.bounds())]
 
     def free_variables(self):
         qv = self.quantifier().var()

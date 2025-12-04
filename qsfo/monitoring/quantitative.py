@@ -129,14 +129,15 @@ class OnlineMonitor:
         self.timevar = Var("t")
         self._horizon = horizon
 
-        # TODO: gather constraints from the formula
-        self._P_dom: Polyhedron | None = Polyhedron([self.timevar >= 0])
+        # gather constraints from the formula and other known constraints that are valid universally
+        bounds = formula.get_constant_bounds()
+        bounds_C = []
+        for var, B in bounds:
+            var = Var(var.name())
+            bounds_C.append(B[0] <= var)
+            bounds_C.append(var <= B[1])
+        self._P_dom: Polyhedron | None = Polyhedron([self.timevar >= 0] + bounds_C)
 
-        # we need to create new fresh variables while computing signals,
-        # we cache them here
-        # XXX: if the cache becomes too big, it might be better not
-        # to cache the variables, but just create them and let garbage collection
-        # get rid of them once we do not need them
         self._vars = {}
         # numbering for unnamed variables
         self.__annon_vars_idx: int = 0
