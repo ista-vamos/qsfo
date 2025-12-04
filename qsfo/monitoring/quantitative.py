@@ -650,13 +650,13 @@ class OnlineMonitor:
             )
             if P_I.is_empty():
                 continue
-            Q = self.parametric_lp_maximize(P_I, ph.robustness(), x)
+            Q = self.plp_maximize(P_I, ph.robustness(), x)
             P_res.extend(Q)
 
         return RobustnessPolyhedraList(P_res)
 
     # @trace_calls
-    def parametric_lp_maximize(
+    def plp_maximize(
         self, P: Polyhedron, robustness_expr, x: Var
     ) -> RobustnessPolyhedraList:
         """
