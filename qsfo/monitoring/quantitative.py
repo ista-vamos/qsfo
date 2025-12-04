@@ -655,7 +655,7 @@ class OnlineMonitor:
 
         if not G_pos.is_empty():
             if not U:
-                q = G_pos.intersection(P_Y).intersection(robustness_poly).reduce()
+                q = G_pos.intersection(P_Y).reduce()
                 if not q.is_empty():
                     Q.append(RobustnessPolyhedron(INFTY, q))
                     # add_to_trace("G_pos (not U)", Q[-1])
@@ -745,7 +745,7 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
             else:
                 U.append(bound)  # x {<,<=} bound
 
-    return L, U, Polyhedron(P_0)
+    return L, U, Polyhedron(P_0, variables=P.vars())
 
 
 class OfflineMonitor:
