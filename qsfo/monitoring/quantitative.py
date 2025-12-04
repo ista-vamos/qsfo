@@ -405,7 +405,7 @@ class OnlineMonitor:
 
             res = []
             for l, r in ((l, r) for l in lhs for r in rhs):
-                poly = l.poly().intersection(r.poly()).reduce()
+                poly = l.poly().intersection(r.poly()).intersection(P_seg).reduce()
                 if poly.is_empty():
                     continue
                 res.append(RobustnessPolyhedron(r.robustness() - l.robustness(), poly))
