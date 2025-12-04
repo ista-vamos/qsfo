@@ -675,12 +675,10 @@ class OnlineMonitor:
         assert not P_0.is_empty()
 
         # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
-        if robustness_expr == INFTY:
+        if robustness_expr in (INFTY, NEG_INFTY):
             return RobustnessPolyhedraList(
-                [RobustnessPolyhedron(INFTY, P_0.intersection(P_Y))]
+                [RobustnessPolyhedron(INFTY, P_Y)]
             )
-        elif robustness_expr == NEG_INFTY:
-            raise NotImplementedError("What to do now?")
         if not robustness_expr.has(x):
             alpha, beta = 0, robustness_expr
         else:
