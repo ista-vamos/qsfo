@@ -1,7 +1,6 @@
 import functools
-import inspect
 
-_trace_indent = 0
+_trace_indent: int = 0
 
 
 def trace_calls(func):
