@@ -1,13 +1,12 @@
 from sympy import Rational, Abs
 from qsfo.polyhedron import Var
 
-from ppl import Variable as PPLVariable
+# from ppl import Variable as PPLVariable
 
 
 class Formula:
-
     def __init__(self, children):
-        assert not self in children, "Have self in children"
+        assert self not in children, "Have self in children"
         self._children = children
 
     def time_variables(self) -> list:
@@ -74,10 +73,10 @@ class Formula:
 
         def to_str(ast, lvl):
             if isinstance(ast, Term):
-                S.append(f'{" "*lvl}{ast}')
+                S.append(f"{' ' * lvl}{ast}")
                 return False
 
-            S.append(f'{" "*lvl}{ast.root_str()}')
+            S.append(f"{' ' * lvl}{ast.root_str()}")
             return True
 
         self.visit_bfs(to_str)
@@ -112,7 +111,6 @@ class Not(Formula):
 
 
 class And(Formula):
-
     def __init__(self, lhs: Formula, rhs: Formula):
         super().__init__([lhs, rhs])
 
@@ -130,7 +128,6 @@ class And(Formula):
 
 
 class Or(Formula):
-
     def __init__(self, lhs: Formula, rhs: Formula):
         super().__init__([lhs, rhs])
 
@@ -148,7 +145,6 @@ class Or(Formula):
 
 
 class LessThan(Formula):
-
     def __init__(self, lhs: Formula, rhs: Formula):
         super().__init__([lhs, rhs])
 
@@ -166,7 +162,6 @@ class LessThan(Formula):
 
 
 class LessOrEqual(Formula):
-
     def __init__(self, lhs: Formula, rhs: Formula):
         super().__init__([lhs, rhs])
 
@@ -184,7 +179,6 @@ class LessOrEqual(Formula):
 
 
 class Term(Formula):
-
     def expr(self):
         """Return Sympy expr"""
         raise NotImplementedError("Must be overriden")

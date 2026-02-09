@@ -2,21 +2,20 @@ import time
 
 from qsfo.formula import *
 from qsfo.monitoring.trace import TraceSegment
-from qsfo.monitoring.polyhedralist import FormulaPolyhedraList, PolyhedraList
+from qsfo.monitoring.polyhedralist import PolyhedraList
 from qsfo.polyhedron import (
     Var,
     Polyhedron,
     INFTY,
     NEG_INFTY,
-    solve_for_variable,
     NO_BOUNDS,
     Interval,
     frac,
 )
 
 # import And as AND, to avoid conflict with qsfo.formula.And
-from sympy import And as AND, Eq, S
-from qsfo.dbg import trace_calls, add_to_trace
+from sympy import And as AND, Eq
+# from qsfo.dbg import trace_calls, add_to_trace
 
 
 class RobustnessPolyhedron:
@@ -676,9 +675,7 @@ class OnlineMonitor:
 
         # rewrite the robustness expression to the form `alpha*x + beta` and get `alpha` and `beta`
         if robustness_expr in (INFTY, NEG_INFTY):
-            return RobustnessPolyhedraList(
-                [RobustnessPolyhedron(INFTY, P_Y)]
-            )
+            return RobustnessPolyhedraList([RobustnessPolyhedron(INFTY, P_Y)])
         if not robustness_expr.has(x):
             alpha, beta = 0, robustness_expr
         else:
@@ -787,7 +784,6 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
 
 
 class OfflineMonitor:
-
     def __init__(self, formula, trace, horizon=None):
         self._formula = formula
         self._trace = trace

@@ -13,18 +13,15 @@ from sympy import (
     true,
     Interval as SymPyInterval,
     FiniteSet,
-    EmptySet,
     Eq,
-    Ne,
     Le,
     Ge,
     Lt,
     Gt,
-    LessThan,
 )
 from sympy.core.numbers import Infinity, NegativeInfinity
 
-from qsfo.dbg import trace_calls, add_to_trace
+# from qsfo.dbg import trace_calls, add_to_trace
 
 FRACTIONS_PREC = 1000000
 
@@ -38,7 +35,7 @@ class Interval(SymPyInterval):
         return SymPyInterval.__new__(cls, start, end, lopen, ropen)
 
     def __str__(self):
-        return f'{"<" if self.left_open else "["}{self.start} .. {self.end}{">" if self.right_open else "]"}'
+        return f"{'<' if self.left_open else '['}{self.start} .. {self.end}{'>' if self.right_open else ']'}"
 
 
 INFTY = float("inf")
@@ -372,9 +369,9 @@ class Polyhedron:
             v for c in self._constraints for v in c.atoms(Var)
         )
         assert all(isinstance(v, Symbol) for v in self._vars), self._vars
-        assert (
-            not self._constraints or self._vars
-        ), f"Have constraints but no vars: {self}"
+        assert not self._constraints or self._vars, (
+            f"Have constraints but no vars: {self}"
+        )
         # assert constraints != [True] or self._vars, "Universal poly that became empty, use variables="
 
         if constraints and not self._constraints and not self._vars:
@@ -395,15 +392,15 @@ class Polyhedron:
                 continue
             elif c == False:
                 return False
-           #sym, B = _get_bounds(c)
-           #if sym is not None:
-           #    B = bounds.get(sym, NO_BOUNDS).intersect(B)
-           #    if B == EmptySet:
-           #        # unsat constraints
-           #        return False
-           #
-           #    bounds[sym] = B
-           #    continue
+            # sym, B = _get_bounds(c)
+            # if sym is not None:
+            #    B = bounds.get(sym, NO_BOUNDS).intersect(B)
+            #    if B == EmptySet:
+            #        # unsat constraints
+            #        return False
+            #
+            #    bounds[sym] = B
+            #    continue
 
             # if we have no bound, just copy the constraint
             self._constraints.add(c)
@@ -667,7 +664,7 @@ class Polyhedron:
             assert self._vars
             # self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
             self.__str = (
-                f'{{{", ".join(map(str, self._constraints))}}} over {self._vars}'
+                f"{{{', '.join(map(str, self._constraints))}}} over {self._vars}"
             )
 
     def __str__(self):
