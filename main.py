@@ -4,7 +4,7 @@ import argparse
 
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
-from qsfo.polyhedron import solve_for_variable, FRACTIONS_PREC, Polyhedron, Interval
+from qsfo.polyhedron import Interval
 from csv import writer as csv_writer
 
 from sympy import Eq, solve, Symbol, FiniteSet, And as AND
@@ -106,13 +106,13 @@ if __name__ == "__main__":
 
     if sys.argv[0].startswith("bool"):
         raise NotImplementedError("Boolean monitoring is broken atm")
-        from qsfo.monitoring.boolean import Formula2Polyhedra
-
-        f2ph = Formula2Polyhedra()
-        mon_signal = f2ph.translate(formula, trace)
-        print("Monitoring signal:")
-        for sig in mon_signal:
-            print(sig)
+    # from qsfo.monitoring.boolean import Formula2Polyhedra
+    #
+    # f2ph = Formula2Polyhedra()
+    # mon_signal = f2ph.translate(formula, trace)
+    # print("Monitoring signal:")
+    # for sig in mon_signal:
+    #     print(sig)
     else:
         from qsfo.monitoring.quantitative import OfflineMonitor
 
@@ -140,7 +140,6 @@ if __name__ == "__main__":
                 continue
 
             for expr, sub_intv in sig:
-
                 # get the defining equality for the robustness value
                 if not args.no_stdout:
                     print(f"  {expr} @ {sub_intv}")
