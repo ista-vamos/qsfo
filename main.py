@@ -70,9 +70,9 @@ if __name__ == "__main__":
         print("--- Parsed formula ---")
         print(formula)
         print("------")
-        print("Free variables: ", set(map(str, formula.free_variables())))
-        print("Bound variables: ", set(map(str, formula.bound_variables())))
-        print("Signals: ", set(map(lambda s: s.name(), formula.signals())))
+        print("Free variables: ", set(map(str, formula.free_variables())) or "∅")
+        print("Bound variables: ", set(map(str, formula.bound_variables())) or "∅")
+        print("Signals: ", set(map(lambda s: str(s.name()), formula.signals())))
 
     trace_file = args.input
     if trace_file.endswith(".csv"):
