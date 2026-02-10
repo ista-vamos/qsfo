@@ -7,7 +7,7 @@ _prio0: exists | forall | _prio1
 exists: ("exists" | "\exists") quantifier ["."|":"] _prio0
 forall: ("forall" | "\forall") quantifier ["."|":"] _prio0
 quantifier: NAME | NAME bound
-bound: ["\in" | "in"] "[" INT "," INT "]"
+bound: ["\in" | "in"] "[" number "," number "]"
 
 _prio1: land | lor
 ?land: _prio1 "&&" _prio1 | _prio1 "\and" _prio1 | _prio2
