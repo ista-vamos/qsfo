@@ -1,3 +1,4 @@
+from lark import Token
 from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval, frac
 from sympy import Eq
 import csv
@@ -60,7 +61,9 @@ class TraceSegment(Polyhedron):
 
         return Polyhedron(C, set((self.timevar(),)), self._time_bounds)
 
-    def substitute(self, S: dict, new_timevar=None, variables=None):
+    def substitute(
+        self, S: dict, new_timevar: None | str = None, variables: None | set = None
+    ) -> "TraceSegment":
         n = TraceSegment(
             new_timevar or self._timevar,
             self.substitute_constraints(S),
@@ -85,8 +88,7 @@ class PiecewiseTrace(list):
 
 
 class SignalsTrace(list):
-
-    def __init__(self, header, iterable):
+    def __init__(self, header: list[str], iterable):
         """
         `header` is a list of strings, first one is the time variable,
         the rest is the signal.
@@ -94,13 +96,13 @@ class SignalsTrace(list):
         super().__init__(iterable)
         self._header = header
 
-    def timevar(self):
+    def timevar(self) -> str:
         return self._header[0]
 
-    def header(self):
+    def header(self) -> list[str]:
         return self._header
 
-    def from_signal_file(path):
+    def from_signal_file(path: str) -> "SignalsTrace":
         """
         Create trace from a file containing sampled signals.
         We assume that the file has a header with names.
@@ -114,13 +116,18 @@ class SignalsTrace(list):
             for n, line in enumerate(f):
                 vals = line.split()
                 if len(vals) != N:
-                    raise RuntimeError(f"Missing values on line {n+2}")
+                    raise RuntimeError(f"Missing values on line {n + 2}")
 
                 tr.append({header[i]: float(vals[i]) for i in range(N)})
 
             return tr
 
-    def from_csv_file(path: str, sampling=None, timevar="t", signals: list[str] = None):
+    def from_csv_file(
+        path: str,
+        sampling: None | int | float = None,
+        timevar: str = "t",
+        signals: None | list[Token] = None,
+    ) -> "SignalsTrace":
         """
         If samling is not None, we assume that it is a floating point number describing
         the sampling frequency of the data in the CSV file. In that case,
@@ -132,20 +139,20 @@ class SignalsTrace(list):
             reader = csv.reader(f)
             header_row = next(reader)
             if signals:
-                signals = set((s.value.strip() for s in signals))
-                signals.add(timevar)
-                header = [nm.strip() for nm in header_row if nm in signals]
+                _signals = set((s.value.strip() for s in signals))
+                _signals.add(timevar)
+                header: list[str] = [nm.strip() for nm in header_row if nm in _signals]
             else:
-                header = [nm.strip() for nm in header_row]
+                header: list[str] = [nm.strip() for nm in header_row]
 
             if sampling is not None:
-                header = [str(timevar)] + header
+                header: list[str] = [str(timevar)] + header
             tr = SignalsTrace(header, [])
             N = len(header_row)
             for n, row in enumerate(reader):
                 if len(row) != N:
                     raise RuntimeError(
-                        f"Missing values on line {n+2}. Expected {N} values, got {len(vals)}"
+                        f"Missing values on line {n + 2}. Expected {N} values, got {len(vals)}"
                     )
 
                 if sampling is not None:
@@ -173,18 +180,18 @@ class SignalsTrace(list):
         N = len(header)
         for n, row in enumerate(lst[1:]):
             if len(row) != N:
-                raise RuntimeError(f"Missing values on line {n+2}")
+                raise RuntimeError(f"Missing values on line {n + 2}")
 
             tr.append({header[i]: float(row[i]) for i in range(N)})
 
         return tr
 
-    def piecewise_linear_signal(self, varname) -> list:
+    def piecewise_linear_signal(self, varname: str) -> list[TraceSegment]:
         """
         Get the piecewise linear signal for a particular variable
         represented as a sequence of timed polyhedra.
         """
-        t = self._header[0]
+        t: str = self._header[0]
         timevar = Var(f"t_{varname}")
         resvar = Var(f"v_{varname}")
         N = len(self)

@@ -120,7 +120,7 @@ def robustness_poly_op(op, lhs, rhs):
 
 
 class OnlineMonitor:
-    def __init__(self, formula: Formula, horizon: float = None):
+    def __init__(self, formula: Formula, horizon: float | int | None = None):
         self._formula: Formula = formula
         # the signal history up to the horizon (P_f)
         self._signal: list[dict[str, RobustnessTraceSegment]] = []
@@ -791,11 +791,11 @@ class OfflineMonitor:
 
     def signal(self):
         mon = OnlineMonitor(self._formula, self._horizon)
-        signal_names = self._trace.header()[1:]
-        piecewise_signals: dict[str, TraceSegment] = {
+        signal_names: list[str] = self._trace.header()[1:]
+        piecewise_signals: dict[str, list[TraceSegment]] = {
             name: self._trace.piecewise_linear_signal(name) for name in signal_names
         }
-        timevar: Var = self._trace.timevar()
+        # timevar: Var = self._trace.timevar()
 
         for n in range(len(self._trace) - 1):
             # merge constraints for all signals together,
@@ -812,12 +812,17 @@ class OfflineMonitor:
             yield mon.update(segment, time_interval)
 
     def signal_with_stats(self):
+        """
+        Generator for the robustness signal of the formula on the trace
+        together with statistics about the computation (e.g., time of computation).
+        """
         mon = OnlineMonitor(self._formula, self._horizon)
         signal_names = self._trace.header()[1:]
-        piecewise_signals: dict[str, TraceSegment] = {
+        piecewise_signals: dict[str, list[TraceSegment]] = {
             name: self._trace.piecewise_linear_signal(name) for name in signal_names
         }
-        timevar: Var = self._trace.timevar()
+
+        # timevar: Var = self._trace.timevar()
 
         for n in range(len(self._trace) - 1):
             # merge constraints for all signals together,
