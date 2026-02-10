@@ -11,8 +11,8 @@ class AstTransformer(Transformer):
 
     def timeadd(self, items):
         assert len(items) == 2, items
-        assert isinstance(items[0], TimeTerm), items
-        assert isinstance(items[1], TimeTerm), items
+        assert isinstance(items[0], (TimeTerm, Constant)), items
+        assert isinstance(items[1], (TimeTerm, Constant)), items
         return TimeOp("+", items[0], items[1])
 
     def timesub(self, items):
@@ -23,8 +23,8 @@ class AstTransformer(Transformer):
 
     def timemul(self, items):
         assert len(items) == 2, items
-        assert isinstance(items[0], TimeTerm), items
-        assert isinstance(items[1], TimeTerm), items
+        assert isinstance(items[0], (TimeTerm, Constant)), items
+        assert isinstance(items[1], (TimeTerm, Constant)), items
         return TimeOp("*", items[0], items[1])
 
     def timeconst(self, items):
@@ -48,25 +48,25 @@ class AstTransformer(Transformer):
 
     def valsub(self, items):
         assert len(items) == 2
-        assert isinstance(items[0], ValueTerm), items
-        assert isinstance(items[1], ValueTerm), items
+        assert isinstance(items[0], (ValueTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, Constant)), items
         return ValueOp("-", items[0], items[1])
 
     def valadd(self, items):
         assert len(items) == 2
-        assert isinstance(items[0], ValueTerm), items
-        assert isinstance(items[1], ValueTerm), items
+        assert isinstance(items[0], (ValueTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, Constant)), items
         return ValueOp("+", items[0], items[1])
 
     def valmul(self, items):
         assert len(items) == 2
-        assert isinstance(items[0], ValueTerm), items
-        assert isinstance(items[1], ValueTerm), items
+        assert isinstance(items[0], (ValueTerm, Constant)), items
+        assert isinstance(items[1], (ValueTerm, Constant)), items
         return ValueOp("*", items[0], items[1])
 
     def valabs(self, items):
         assert len(items) == 1
-        assert isinstance(items[0], ValueTerm), items
+        assert isinstance(items[0], (ValueTerm, Constant)), items
         return ValueOp("abs", items[0])
 
     def is_le(self, items):
@@ -126,7 +126,7 @@ class AstTransformer(Transformer):
         vars = [v for v in items[1].free_variables() if var == v.name()]
         if not vars:
             raise RuntimeError(
-                f'Binding non-existing variable `{var}` in formula `{items[1]}` with free variables: {",".join(map(str, items[1].free_variables()))}'
+                f"Binding non-existing variable `{var}` in formula `{items[1]}` with free variables: {','.join(map(str, items[1].free_variables()))}"
             )
         if any(var == v for v in items[1].bound_variables()):
             raise NotImplementedError(
