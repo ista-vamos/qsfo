@@ -152,15 +152,15 @@ class SignalsTrace(list):
             for n, row in enumerate(reader):
                 if len(row) != N:
                     raise RuntimeError(
-                        f"Missing values on line {n + 2}. Expected {N} values, got {len(vals)}"
+                        f"Missing values on line {n + 2}. Expected {N} values, got {len(row)}"
                     )
 
                 if sampling is not None:
                     row = [n * sampling] + row
 
                 # filter to given signals only
-                if signals:
-                    vals = {s: float(v) for s, v in zip(header, row) if s in signals}
+                if _signals:
+                    vals = {s: float(v) for s, v in zip(header, row) if s in _signals}
                 else:
                     vals = {s: float(v) for s, v in zip(header, row)}
 
