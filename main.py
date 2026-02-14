@@ -40,6 +40,13 @@ def parse_cmd():
     )
 
     parser.add_argument(
+        "--csv-no-buffering",
+        action="store_true",
+        default=True,
+        help="Write output to CSV immediately, without buffering.",
+    )
+
+    parser.add_argument(
         "--no-stdout",
         action="store_true",
         default=False,
@@ -134,6 +141,8 @@ if __name__ == "__main__":
                         t_m,
                     ]
                 )
+                if args.csv_no_buffering:
+                    csvfile.flush()
 
             if args.no_stdout and not (csv and args.csv_with_robustness):
                 # nothing to do
@@ -165,6 +174,9 @@ if __name__ == "__main__":
                             t_m,
                         ]
                     )
+
+                    if args.csv_no_buffering:
+                        csvfile.flush()
 
             if not args.no_stdout:
                 print("")
