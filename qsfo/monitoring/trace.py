@@ -127,6 +127,7 @@ class SignalsTrace(list):
         sampling: None | int | float = None,
         timevar: str = "t",
         signals: None | list[Token] = None,
+        max_samples: None | int = None,
     ) -> "SignalsTrace":
         """
         If samling is not None, we assume that it is a floating point number describing
@@ -150,6 +151,8 @@ class SignalsTrace(list):
             tr = SignalsTrace(header, [])
             N = len(header_row)
             for n, row in enumerate(reader):
+                if max_samples is not None and n >= max_samples:
+                    break
                 if len(row) != N:
                     raise RuntimeError(
                         f"Missing values on line {n + 2}. Expected {N} values, got {len(row)}"

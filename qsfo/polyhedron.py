@@ -20,6 +20,7 @@ from sympy import (
     Gt,
 )
 from sympy.core.numbers import Infinity, NegativeInfinity
+from sympy.logic.boolalg import BooleanFalse, BooleanTrue
 
 # from qsfo.dbg import trace_calls, add_to_trace
 
@@ -117,6 +118,186 @@ def _get_bounds(term) -> Interval:
             return rhs, Interval(NEG_INFTY, lhs, lopen=False, ropen=(op == ">"))
 
     return None, None
+
+
+def _cmp_numbers(lhs, rhs) -> int | None:
+    """Compare two numeric SymPy/Python values.
+
+    Returns 1 if lhs > rhs, -1 if lhs < rhs, 0 if lhs == rhs, and None if
+    comparison cannot be established cheaply.
+    """
+
+    if lhs == rhs:
+        return 0
+    try:
+        if bool(lhs > rhs):
+            return 1
+        if bool(lhs < rhs):
+            return -1
+    except TypeError:
+        return None
+    return None
+
+
+def _tighten_lower(current, candidate):
+    """Keep the tighter lower bound (bigger value, stricter on ties)."""
+
+    if current is None:
+        return candidate
+    cmp = _cmp_numbers(candidate[0], current[0])
+    if cmp is None:
+        return None
+    if cmp > 0:
+        return candidate
+    if cmp < 0:
+        return current
+    return (current[0], current[1] or candidate[1])
+
+
+def _tighten_upper(current, candidate):
+    """Keep the tighter upper bound (smaller value, stricter on ties)."""
+
+    if current is None:
+        return candidate
+    cmp = _cmp_numbers(candidate[0], current[0])
+    if cmp is None:
+        return None
+    if cmp < 0:
+        return candidate
+    if cmp > 0:
+        return current
+    return (current[0], current[1] or candidate[1])
+
+
+def _extract_linear_bound(term, var):
+    """Try extracting a bound on `var` from a linear relational constraint.
+
+    Returns:
+      - ("lower", bound, strict) for var >/>= bound
+      - ("upper", bound, strict) for var </<= bound
+      - ("eq", bound, False) for var == bound
+      - None if this is not a supported simple linear bound
+    """
+
+    op = getattr(term, "rel_op", None)
+    if op not in ("<", "<=", ">", ">=", "=="):
+        return None
+
+    expr = (term.lhs - term.rhs).collect(var)
+    coeff = expr.coeff(var)
+    if coeff == 0:
+        return None
+
+    rest = expr - coeff * var
+    if rest.has(var):
+        return None
+    if rest.free_symbols:
+        return None
+
+    sign = _cmp_numbers(coeff, 0)
+    if sign is None or sign == 0:
+        return None
+
+    bound = -rest / coeff
+    if not getattr(bound, "is_number", False):
+        return None
+
+    if op == "==":
+        return ("eq", bound, False)
+
+    strict = op in ("<", ">")
+    if op in ("<", "<="):
+        return ("upper", bound, strict) if sign > 0 else ("lower", bound, strict)
+    return ("lower", bound, strict) if sign > 0 else ("upper", bound, strict)
+
+
+def _tri_bool(term) -> bool | None:
+    """Return concrete bool for SymPy/Python booleans, else None."""
+
+    if term is True or term is False:
+        return term
+    if isinstance(term, (BooleanTrue, BooleanFalse)):
+        return bool(term)
+    return None
+
+
+def constraints_time_set_fast(constraints, timevar: Var):
+    """Fast path for extracting a 1D time set from simple constraints.
+
+    Returns Interval/FiniteSet for constraints over `timevar` only.
+    Returns None when constraints are multi-variate or not in the supported
+    simple linear form; callers should then fall back to the generic SymPy
+    `as_set()` path.
+    """
+
+    if timevar is None:
+        return None
+
+    lower = None  # tuple(bound_value, is_strict)
+    upper = None  # tuple(bound_value, is_strict)
+    saw_time_constraint = False
+
+    for term in constraints:
+        tb = _tri_bool(term)
+        if tb is True:
+            continue
+        if tb is False:
+            return None
+
+        if not hasattr(term, "free_symbols"):
+            return None
+        vars_in_term = term.free_symbols
+        if not vars_in_term:
+            # A non-boolean constant term (or otherwise unsupported expression):
+            # bail out and let the generic path decide.
+            return None
+        if vars_in_term != {timevar}:
+            return None
+
+        parsed = _extract_linear_bound(term, timevar)
+        if parsed is None:
+            return None
+        saw_time_constraint = True
+
+        kind, bound, is_strict = parsed
+        if kind == "lower":
+            lower = _tighten_lower(lower, (bound, is_strict))
+            if lower is None:
+                return None
+        elif kind == "upper":
+            upper = _tighten_upper(upper, (bound, is_strict))
+            if upper is None:
+                return None
+        else:
+            lower = _tighten_lower(lower, (bound, False))
+            upper = _tighten_upper(upper, (bound, False))
+            if lower is None or upper is None:
+                return None
+
+        if lower is not None and upper is not None:
+            cmp = _cmp_numbers(lower[0], upper[0])
+            if cmp is None:
+                return None
+            if cmp > 0:
+                return None
+            if cmp == 0 and (lower[1] or upper[1]):
+                return None
+
+    if not saw_time_constraint:
+        return None
+
+    if lower is not None and upper is not None:
+        cmp = _cmp_numbers(lower[0], upper[0])
+        if cmp is None:
+            return None
+        if cmp == 0 and not lower[1] and not upper[1]:
+            return FiniteSet(lower[0])
+
+    start = lower[0] if lower is not None else NEG_INFTY
+    end = upper[0] if upper is not None else INFTY
+    left_open = lower[1] if lower is not None else False
+    right_open = upper[1] if upper is not None else False
+    return Interval(start, end, left_open, right_open)
 
 
 def get_bounds(C: list) -> dict:

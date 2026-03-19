@@ -4,7 +4,7 @@ import argparse
 
 from qsfo.monitoring.trace import SignalsTrace
 from qsfo.parser import Parser
-from qsfo.polyhedron import Interval
+from qsfo.polyhedron import Interval, constraints_time_set_fast
 from csv import writer as csv_writer
 
 from sympy import Eq, solve, Symbol, FiniteSet, And as AND
@@ -26,6 +26,12 @@ def parse_cmd():
     )
     parser.add_argument(
         "--horizon", type=float, default=None, help="Optional horizon value (float)"
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Optional maximum number of CSV samples to load from input traces",
     )
 
     parser.add_argument(
@@ -57,7 +63,17 @@ def parse_cmd():
 
 
 def poly_as_intv(poly):
-    intv = AND(*poly.constraints()).as_set()
+    vars_in_poly = poly.vars()
+    if len(vars_in_poly) == 1:
+        timevar = next(iter(vars_in_poly))
+    else:
+        # Fallback heuristic for typical monitor output domains.
+        timevar = next((v for v in vars_in_poly if str(v) == "t"), None)
+
+    intv = constraints_time_set_fast(poly.constraints(), timevar)
+    if intv is None:
+        intv = AND(*poly.constraints()).as_set()
+
     if isinstance(intv, FiniteSet):
         t_start = t_end = next(iter(intv))
         l_open, r_open = False, False
@@ -84,7 +100,10 @@ if __name__ == "__main__":
     trace_file = args.input
     if trace_file.endswith(".csv"):
         trace = SignalsTrace.from_csv_file(
-            trace_file, args.samp, signals=[s.name() for s in formula.signals()]
+            trace_file,
+            args.samp,
+            signals=[s.name() for s in formula.signals()],
+            max_samples=args.max_samples,
         )
     else:
         trace = SignalsTrace.from_signal_file(trace_file)
