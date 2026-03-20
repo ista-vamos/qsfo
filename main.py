@@ -7,7 +7,7 @@ from qsfo.parser import Parser
 from qsfo.polyhedron import Interval, constraints_time_set_fast
 from csv import writer as csv_writer
 
-from sympy import Eq, solve, Symbol, FiniteSet, And as AND
+from qsfo.sym import FiniteSet
 
 
 def parse_cmd():
@@ -72,7 +72,9 @@ def poly_as_intv(poly):
 
     intv = constraints_time_set_fast(poly.constraints(), timevar)
     if intv is None:
-        intv = AND(*poly.constraints()).as_set()
+        raise RuntimeError(
+            f"Cannot extract time set from constraints: {poly.constraints()}"
+        )
 
     if isinstance(intv, FiniteSet):
         t_start = t_end = next(iter(intv))

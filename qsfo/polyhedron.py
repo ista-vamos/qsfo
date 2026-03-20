@@ -3,41 +3,30 @@ import ppl
 from fractions import Fraction
 from math import lcm
 
-from sympy import (
-    symbols,
-    Symbol,
-    simplify as sympy_simplify,
-    reduce_inequalities,
-    And,
-    false,
-    true,
-    Interval as SymPyInterval,
+from qsfo.sym import (
+    Var,
+    Relation,
+    Interval,
     FiniteSet,
+    EmptySet,
     Eq,
     Le,
     Ge,
     Lt,
     Gt,
+    frac,
+    sym_num,
+    _to_sym,
+    expr_has,
+    expr_subs,
+    expr_free_symbols,
+    _is_constant,
+    _make_rel,
 )
-from sympy.core.numbers import Infinity, NegativeInfinity
-from sympy.logic.boolalg import BooleanFalse, BooleanTrue
 
 # from qsfo.dbg import trace_calls, add_to_trace
 
 FRACTIONS_PREC = 1000000
-
-
-class Var(Symbol):
-    pass
-
-
-class Interval(SymPyInterval):
-    def __new__(cls, start, end, lopen=False, ropen=False):
-        return SymPyInterval.__new__(cls, start, end, lopen, ropen)
-
-    def __str__(self):
-        return f"{'<' if self.left_open else '['}{self.start} .. {self.end}{'>' if self.right_open else ']'}"
-
 
 INFTY = float("inf")
 NEG_INFTY = float("-inf")
@@ -47,8 +36,8 @@ NO_BOUNDS = Interval(NEG_INFTY, INFTY)
 def _break_eqs(C: list) -> list:
     for c in C:
         if c.rel_op == "==":
-            yield c.lhs <= c.rhs
-            yield c.rhs <= c.lhs
+            yield Le(c.lhs, c.rhs)
+            yield Le(c.rhs, c.lhs)
         else:
             yield c
 
@@ -69,8 +58,6 @@ def infer_eqs(C):
         if c.rel_op in ("==", "<", ">"):
             new_C.append(c)  # strict ineq
             continue
-        # if not isinstance(c, (Le, Lt, Ge, Gt)):
-        #    new_c.append(c)
         assert c.rel_op in ("<=", ">="), c
         c = to_le(c)
 
@@ -82,7 +69,7 @@ def infer_eqs(C):
 
     seen = seen.difference(eqs)
 
-    return [(Eq(rhs, lhs)) for rhs, lhs in eqs] + [lhs <= rhs for lhs, rhs in seen]
+    return [(Eq(rhs, lhs)) for rhs, lhs in eqs] + [Le(lhs, rhs) for lhs, rhs in seen]
 
 
 def to_le(term):
@@ -91,9 +78,9 @@ def to_le(term):
     """
     assert term.rel_op in ("<=", ">=", "<", ">"), term
     if term.rel_op == ">=":
-        term = term.rhs <= term.lhs
+        term = Le(term.rhs, term.lhs)
     elif term.rel_op == ">":
-        term = term.rhs < term.lhs
+        term = Lt(term.rhs, term.lhs)
 
     assert term.rel_op in ("<=", "<")
     return term
@@ -101,42 +88,90 @@ def to_le(term):
 
 def _get_bounds(term) -> Interval:
     op, lhs, rhs = term.rel_op, term.lhs, term.rhs
+    lhs_is_sym = _is_sym(lhs)
+    rhs_is_sym = _is_sym(rhs)
+    lhs_is_num = _is_constant(lhs)
+    rhs_is_num = _is_constant(rhs)
+
     if op == "==":
-        if lhs.is_symbol and rhs.is_number:
-            return lhs, Interval(rhs, rhs)
-        elif rhs.is_symbol and lhs.is_number:
-            return rhs, Interval(lhs, lhs)
+        if lhs_is_sym and rhs_is_num:
+            return _to_var(lhs), Interval(rhs, rhs)
+        elif rhs_is_sym and lhs_is_num:
+            return _to_var(rhs), Interval(lhs, lhs)
     elif op in ("<=", "<"):
-        if lhs.is_symbol and rhs.is_number:
-            return lhs, Interval(NEG_INFTY, rhs, lopen=False, ropen=(op == "<"))
-        elif rhs.is_symbol and lhs.is_number:
-            return rhs, Interval(lhs, INFTY, lopen=(op == "<"), ropen=False)
+        if lhs_is_sym and rhs_is_num:
+            return _to_var(lhs), Interval(NEG_INFTY, rhs, lopen=False, ropen=(op == "<"))
+        elif rhs_is_sym and lhs_is_num:
+            return _to_var(rhs), Interval(lhs, INFTY, lopen=(op == "<"), ropen=False)
     elif op in (">=", ">"):
-        if lhs.is_symbol and rhs.is_number:
-            return lhs, Interval(rhs, INFTY, lopen=(op == ">"), ropen=False)
-        elif rhs.is_symbol and lhs.is_number:
-            return rhs, Interval(NEG_INFTY, lhs, lopen=False, ropen=(op == ">"))
+        if lhs_is_sym and rhs_is_num:
+            return _to_var(lhs), Interval(rhs, INFTY, lopen=(op == ">"), ropen=False)
+        elif rhs_is_sym and lhs_is_num:
+            return _to_var(rhs), Interval(NEG_INFTY, lhs, lopen=False, ropen=(op == ">"))
 
     return None, None
 
 
+def _is_sym(expr) -> bool:
+    """Check if expression is a single symbol."""
+    if isinstance(expr, Var):
+        return True
+    from symbolica import AtomType
+    if isinstance(expr, Expression):
+        return expr.get_type() == AtomType.Var
+    return False
+
+
+def _to_var(expr) -> Var:
+    """Convert a single-symbol expression to a Var."""
+    if isinstance(expr, Var):
+        return expr
+    if isinstance(expr, Expression):
+        return Var(str(expr.get_name()))
+    raise TypeError(f"Cannot convert {type(expr)} to Var")
+
+
 def _cmp_numbers(lhs, rhs) -> int | None:
-    """Compare two numeric SymPy/Python values.
+    """Compare two numeric values.
 
     Returns 1 if lhs > rhs, -1 if lhs < rhs, 0 if lhs == rhs, and None if
     comparison cannot be established cheaply.
     """
+    # Convert Expressions to comparable values
+    lhs = _to_comparable(lhs)
+    rhs = _to_comparable(rhs)
+    if lhs is None or rhs is None:
+        return None
 
     if lhs == rhs:
         return 0
     try:
-        if bool(lhs > rhs):
+        if lhs > rhs:
             return 1
-        if bool(lhs < rhs):
+        if lhs < rhs:
             return -1
     except TypeError:
         return None
     return None
+
+
+def _to_comparable(val):
+    """Convert a value to something Python can compare (Fraction/int/float)."""
+    if isinstance(val, (int, float, Fraction)):
+        return val
+    if isinstance(val, Var):
+        return None
+    if isinstance(val, Expression):
+        if val.is_constant():
+            try:
+                return Fraction(val.to_int())
+            except Exception:
+                return Fraction(float(str(val.to_float()))).limit_denominator(FRACTIONS_PREC)
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
 
 
 def _tighten_lower(current, candidate):
@@ -183,15 +218,19 @@ def _extract_linear_bound(term, var):
     if op not in ("<", "<=", ">", ">=", "=="):
         return None
 
-    expr = (term.lhs - term.rhs).collect(var)
-    coeff = expr.coeff(var)
-    if coeff == 0:
+    var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
+    diff = term.lhs - term.rhs
+    expr = diff.collect(var_sym)
+    coeff = expr.coefficient(var_sym)
+    if _is_constant(coeff) and _to_comparable(coeff) == 0:
         return None
 
-    rest = expr - coeff * var
-    if rest.has(var):
+    rest = expr - coeff * var_sym
+    if not _is_constant(rest):
         return None
-    if rest.free_symbols:
+    # Check rest has no free symbols
+    rest_syms = expr_free_symbols(rest)
+    if rest_syms:
         return None
 
     sign = _cmp_numbers(coeff, 0)
@@ -199,7 +238,7 @@ def _extract_linear_bound(term, var):
         return None
 
     bound = -rest / coeff
-    if not getattr(bound, "is_number", False):
+    if not _is_constant(bound):
         return None
 
     if op == "==":
@@ -212,12 +251,12 @@ def _extract_linear_bound(term, var):
 
 
 def _tri_bool(term) -> bool | None:
-    """Return concrete bool for SymPy/Python booleans, else None."""
+    """Return concrete bool for Python booleans, else None."""
 
     if term is True or term is False:
         return term
-    if isinstance(term, (BooleanTrue, BooleanFalse)):
-        return bool(term)
+    if isinstance(term, bool):
+        return term
     return None
 
 
@@ -226,8 +265,7 @@ def constraints_time_set_fast(constraints, timevar: Var):
 
     Returns Interval/FiniteSet for constraints over `timevar` only.
     Returns None when constraints are multi-variate or not in the supported
-    simple linear form; callers should then fall back to the generic SymPy
-    `as_set()` path.
+    simple linear form; callers should then fall back to the generic path.
     """
 
     if timevar is None:
@@ -304,11 +342,7 @@ def get_bounds(C: list) -> dict:
     """
     Scan the list of constraints and get integer bounds
     on the variables.
-
-    The function could be done more efficient (not storing the lists of values, but computing
-    min/max on the fly), but we'll see if it is necessary.
     """
-    # eqs = {}
     bounds = {}
     for term in C:
         sym, B = _get_bounds(term)
@@ -322,124 +356,119 @@ def get_bounds(C: list) -> dict:
 
 def remove_redundant_constraints(C) -> list:
     raise RuntimeError("This might be buggy")
-    B = get_bounds(C)
-    if not B:
-        return C
-
-    return _remove_redundant_constraints(C, B)
-
-
-def _remove_redundant_constraints(C: list, bounds: dict) -> list:
-    # FIXME
-    # return C
-
-    new_C = set()
-    # add bounds for these variables to the constraints
-    add_bounds_for = set()
-    for term in C:
-        op, lhs, rhs = term.rel_op, term.lhs, term.rhs
-        # if op not in ("==", "<=", ">=", "<", ">"):
-        # NOTE: the strict inequalities are not handled here yet
-        if op not in ("==", "<=", ">="):
-            new_C.add(term)
-            continue
-
-        if lhs.is_symbol and lhs in bounds and rhs.is_number:
-            # drop this term and add the bound instead
-            add_bounds_for.add(lhs)
-        elif rhs.is_symbol and rhs in bounds and lhs.is_number:
-            # drop this term and add the bound instead
-            add_bounds_for.add(rhs)
-        else:
-            new_C.add(term)
-
-    for v in add_bounds_for:
-        l, u = bounds[v]
-        if l is not None:
-            new_C.add(l <= v)
-        if u is not None:
-            new_C.add(v <= u)
-
-    return new_C
 
 
 def simplify_constraints(C: list):
-    expr = sympy_simplify(And(*C))
-    elems = expr.args
-    if expr == false:
+    """Simplify constraints via PPL round-trip."""
+    C = list(C)
+    if not C:
         return []
-    assert expr != true, f"And'ed constraints simplified to True: {C}"
-    assert elems != (), (elems, expr, type(expr))
 
-    if isinstance(expr, And):
-        # if eq_break:
-        #    C = [c for e in expr.args for c in break_eqs((e,))]
-        # else:
-        return list(expr.args)
-    elif isinstance(expr, Eq):
-        # if eq_break:
-        #    return [LessThan(elems[0], elems[1]), LessThan(elems[1], elems[0])]
-        return [expr]
-    else:
-        # simplified to a single expression
-        return list(elems)
+    # Gather all variables
+    all_vars = set()
+    for c in C:
+        if hasattr(c, 'free_symbols'):
+            all_vars.update(c.free_symbols)
 
+    if not all_vars:
+        return C
 
-def frac(x):
-    # FIXME: use better precision
-    # return Fraction(str(x))
-    return Fraction(float(x)).limit_denominator(FRACTIONS_PREC)
+    # Build PPL polyhedron and extract minimized constraints
+    try:
+        vars_list = list(all_vars)
+        variables = [(v, ppl.Variable(n)) for n, v in enumerate(vars_list)]
+        cs = ppl.Constraint_System()
+        for c in C:
+            cs.insert(sympy_to_ppl_constraint(c, variables))
+        poly = ppl.NNC_Polyhedron(cs)
+        if poly.is_empty():
+            return []
+        return [ppl_constraint_to_sympy(c, variables) for c in poly.minimized_constraints()]
+    except Exception:
+        return C
 
 
 def coef_with_denom(c: Fraction, denom):
     return int(c.numerator * (denom / c.denominator))
 
 
+def _expr_coefficients_dict(expr, variables):
+    """Extract coefficients from a Symbolica expression for the given variables.
+
+    Returns a dict mapping each variable (as a Var) to its Fraction coefficient,
+    plus a special key 1 for the constant term.
+    """
+    from symbolica import Expression as Expr
+
+    expr_sym = _to_sym(expr)
+    result = {}
+
+    for var, _ in variables:
+        var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
+        c = expr_sym.coefficient(var_sym)
+        if _is_constant(c):
+            cv = _to_comparable(c)
+            if cv != 0:
+                result[var] = frac(cv)
+
+    # Constant term: substitute all variables with 0
+    const_expr = expr_sym
+    for var, _ in variables:
+        var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
+        const_expr = const_expr.replace(var_sym, Expression.num(0))
+
+    if _is_constant(const_expr):
+        cv = _to_comparable(const_expr)
+        if cv != 0:
+            result[1] = frac(cv)
+
+    return result
+
+
 def sympy_to_ppl_expr(expr, variables):
     """
-    Convert a SymPy linear inequality (Le, Ge, Lt, Gt) to a ppl.Constraint
+    Convert a Symbolica expression to a PPL Linear_Expression.
 
-    `variables` is a list of (sympy var, PPL var) tuples and `var_map`
-    is a mapping made from this list.
+    `variables` is a list of (Var, PPL var) tuples.
     """
-    # Extract coefficients
-    coeff_dict = {k: frac(v) for k, v in expr.as_coefficients_dict().items()}
-    constant = frac(coeff_dict.get(1, 0))
+    coeff_dict = _expr_coefficients_dict(expr, variables)
+    constant = coeff_dict.get(1, Fraction(0))
 
-    denom = lcm(*(v.denominator for v in coeff_dict.values()), constant.denominator)
+    all_fracs = list(coeff_dict.values()) + [constant]
+    denom = lcm(*(v.denominator for v in all_fracs if isinstance(v, Fraction)), 1)
 
     # Create PPL expression
     coeffs = {
-        pplv.id(): coef_with_denom(coeff_dict.get(v, frac(0)), denom)
+        pplv.id(): coef_with_denom(coeff_dict.get(v, Fraction(0)), denom)
         for v, pplv in variables
     }
-    constant = coef_with_denom(constant, denom)
-    return ppl.Linear_Expression(coeffs, constant)
+    constant_int = coef_with_denom(constant, denom)
+    return ppl.Linear_Expression(coeffs, constant_int)
 
 
-def sympy_to_ppl_constraint(sympy_expr, variables):
+def sympy_to_ppl_constraint(rel, variables):
     """
-    Convert a SymPy linear inequality (Le, Ge, Lt, Gt) to a ppl.Constraint
+    Convert a Relation to a ppl.Constraint.
 
-    `variables` is a list of (sympy var, PPL var) tuples and `var_map`
-    is a mapping made from this list.
+    `variables` is a list of (Var, PPL var) tuples.
     """
     # move all terms to LHS
-    expr = sympy_to_ppl_expr(sympy_expr.lhs - sympy_expr.rhs, variables)
+    diff = rel.lhs - rel.rhs
+    expr = sympy_to_ppl_expr(diff, variables)
 
-    # Restore the inequality
-    if isinstance(sympy_expr, Le):
+    op = rel.rel_op
+    if op == "<=":
         return ppl.Constraint(expr <= 0)
-    elif isinstance(sympy_expr, Ge):
+    elif op == ">=":
         return ppl.Constraint(expr >= 0)
-    elif isinstance(sympy_expr, Lt):
+    elif op == "<":
         return ppl.Constraint(expr < 0)
-    elif isinstance(sympy_expr, Gt):
+    elif op == ">":
         return ppl.Constraint(expr > 0)
-    elif isinstance(sympy_expr, Eq):
+    elif op == "==":
         return ppl.Constraint(expr == 0)
 
-    raise ValueError(f"Unsupported SymPy inequality type: {sympy_expr}")
+    raise ValueError(f"Unsupported relation type: {rel}")
 
 
 def ppl_constraint_to_sympy(ppl_c, variables):
@@ -448,12 +477,12 @@ def ppl_constraint_to_sympy(ppl_c, variables):
     ]
     lhs = sum(monomials) + ppl_c.inhomogeneous_term()
     if ppl_c.is_strict_inequality():
-        return lhs > 0
+        return Gt(lhs, 0)
     if ppl_c.is_equality():
         return Eq(lhs, 0)
 
     assert ppl_c.is_nonstrict_inequality(), ppl_c
-    return lhs >= 0
+    return Ge(lhs, 0)
 
 
 def complement_term(term, timevar, time_bounds):
@@ -465,60 +494,118 @@ def complement_term(term, timevar, time_bounds):
         if isinstance(time_bounds, FiniteSet):
             timebounds = [Eq(timevar, next(iter(time_bounds)))]
         else:
-            timebounds = [time_bounds.start <= timevar, timevar <= time_bounds.end]
+            timebounds = [Le(time_bounds.start, timevar), Le(timevar, time_bounds.end)]
     else:
         timebounds = []
 
-    if isinstance(term, Eq):
+    if term.rel_op == "==":
         # in this case we yield two sets of constraints
-        for C in [term.lhs < term.rhs], [term.rhs < term.lhs]:
-            yield C + timebounds
+        for C in [Lt(term.lhs, term.rhs)], [Lt(term.rhs, term.lhs)]:
+            yield [C] + timebounds if not isinstance(C, list) else C + timebounds
         return
 
     # only one set of constraints
     yield [term.negated] + timebounds
 
 
-# op, lhs, rhs = term.rel_op, term.lhs, term.rhs
-# if op == "==":
-#    return [lhs < rhs, rhs < lhs]
-# elif op == "<=":
-#    return [lhs > rhs]
-# elif op == "<":
-#    return [lhs >= rhs]
-# elif op == ">":
-#    return [lhs <= rhs]
-# elif op == ">=":
-#    return [lhs < rhs]
-
-
 def solve_for_variable(to_reduce, var) -> list:
     """
-    Solve inequalities for a single variable.
+    Solve linear inequalities for a single variable.
+    Custom implementation replacing sympy.reduce_inequalities.
     """
     if not to_reduce:
         return []
 
-    res = reduce_inequalities(to_reduce, var)
-    if isinstance(res, And):
-        C = [a for a in res.args]
-    else:
-        C = [res]
+    var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
+    results = []
 
-    if false in C:
-        return false
+    for term in to_reduce:
+        op = term.rel_op
+        diff = term.lhs - term.rhs
+        expr = diff.collect(var_sym)
+        coeff = expr.coefficient(var_sym)
 
-    if C == [true]:
-        return true
+        coeff_val = _to_comparable(coeff)
+        if coeff_val is None or coeff_val == 0:
+            # Constraint doesn't involve var; check if it's trivially true/false
+            if _is_constant(expr):
+                val = _to_comparable(expr)
+                if val is not None:
+                    if op == "<=":
+                        if val <= 0:
+                            continue  # trivially true
+                        else:
+                            return False  # unsatisfiable
+                    elif op == "<":
+                        if val < 0:
+                            continue
+                        else:
+                            return False
+                    elif op == ">=":
+                        if val >= 0:
+                            continue
+                        else:
+                            return False
+                    elif op == ">":
+                        if val > 0:
+                            continue
+                        else:
+                            return False
+                    elif op == "==":
+                        if val == 0:
+                            continue
+                        else:
+                            return False
+            # Non-trivial constraint without var: preserve it
+            results.append(term)
+            continue
 
-    return C
+        rest = expr - coeff * var_sym
+        bound = -rest / coeff
+
+        # Determine the resulting relation direction
+        # If coeff > 0: direction preserved
+        # If coeff < 0: direction flipped
+        if op == "==":
+            results.append(Eq(var, bound))
+        elif op in ("<", "<="):
+            if coeff_val > 0:
+                results.append(_make_rel(var_sym, op, bound))
+            else:
+                flipped = ">=" if op == "<" else ">"  # flip and strict stays same dir
+                # Actually: < with negative coeff flips to >
+                flipped = ">" if op == "<" else ">="
+                results.append(_make_rel(var_sym, flipped, bound))
+        elif op in (">", ">="):
+            if coeff_val > 0:
+                results.append(_make_rel(var_sym, op, bound))
+            else:
+                flipped = "<" if op == ">" else "<="
+                results.append(_make_rel(var_sym, flipped, bound))
+
+    if not results:
+        return True
+
+    # Filter out trivially true results
+    filtered = []
+    for r in results:
+        if r is True:
+            continue
+        if r is False:
+            return False
+        filtered.append(r)
+
+    if not filtered:
+        return True
+
+    return filtered
 
 
 class Polyhedron:
     """
     N-dimensional Polyhedron (bounded polytope).
 
-    `constraints` is a list of linear sympy polynomials.
+    `constraints` is a list of Relation objects.
     """
 
     def __init__(
@@ -533,12 +620,9 @@ class Polyhedron:
         self.__str = None
 
         # time bounds -- used to sort polyhedra during operations
-        # FIXME: time bounds are not implemented now
         self._time_bounds = NO_BOUNDS  # time_bounds
         self._vars = set()
 
-        # constant bounds on variables used to simplify the operations on this polyhedron
-        # self._bounds = {}
         self._constraints = set()
         if not self._add_constraints(constraints):
             # the constraints are unsat, clear them and bail out
@@ -549,11 +633,10 @@ class Polyhedron:
         self._vars = variables or set(
             v for c in self._constraints for v in c.atoms(Var)
         )
-        assert all(isinstance(v, Symbol) for v in self._vars), self._vars
+        assert all(isinstance(v, Var) for v in self._vars), self._vars
         assert not self._constraints or self._vars, (
             f"Have constraints but no vars: {self}"
         )
-        # assert constraints != [True] or self._vars, "Universal poly that became empty, use variables="
 
         if constraints and not self._constraints and not self._vars:
             # we had constraints but they reduced to True which was dropped..
@@ -561,42 +644,24 @@ class Polyhedron:
                 "Universal poly that became empty because we do not know variables"
             )
 
-        # self.reduce()
-
     def _add_constraints(self, constraints):
-        # Gather constraints that bound the polyhedron by a constant.
-        # Do not add them directly. Rather gather all of them first in a set
-        # add only the intersected constraints at the end.
-        bounds = {}  # self._bounds
+        bounds = {}
         for c in constraints:
-            if c == True:
+            if c is True or c == True:
                 continue
-            elif c == False:
+            elif c is False or c == False:
                 return False
-            # sym, B = _get_bounds(c)
-            # if sym is not None:
-            #    B = bounds.get(sym, NO_BOUNDS).intersect(B)
-            #    if B == EmptySet:
-            #        # unsat constraints
-            #        return False
-            #
-            #    bounds[sym] = B
-            #    continue
-
-            # if we have no bound, just copy the constraint
             self._constraints.add(c)
 
         for sym, I in bounds.items():
             if isinstance(I, FiniteSet):
-                # aaaah, I hate the automatic type conversions that SymPy does...
-                # we need to check if the interval is not a single number.
                 self._constraints.add(Eq(sym, next(iter(I))))
                 continue
 
             if not I.is_left_unbounded:
-                self._constraints.add(I.start < sym if I.left_open else I.start <= sym)
+                self._constraints.add(Lt(I.start, sym) if I.left_open else Le(I.start, sym))
             if not I.is_right_unbounded:
-                self._constraints.add(sym < I.end if I.right_open else sym <= I.end)
+                self._constraints.add(Lt(sym, I.end) if I.right_open else Le(sym, I.end))
 
         return True
 
@@ -615,28 +680,14 @@ class Polyhedron:
 
     def simplify_constraints(self) -> "Polyhedron":
         if self.is_empty() or self.is_universal():
-            # do not return `self`, return a copy
             return Polyhedron(self.constraints(), variables=self.vars())
 
         C = simplify_constraints(self._constraints)
         if not C:
-            # unsat constraints
             return Polyhedron([])
         return Polyhedron(C, variables=self.vars(), time_bounds=self._time_bounds)
 
     def intersection(self, rhs: "Polyhedron", ignore_variables=True) -> "Polyhedron":
-        """
-        Do intersection of two polyhedra. If `ignore_variables` is `True`, the operation first
-        "extends" both polyhedra to be in the same dimensions (the same set of variables)
-        and then do the intersection.
-
-        :param ignore_variables:  if set to `True`, the operation assumes that any variable missing
-                                  in `self` or `rhs` is present and unconstraint. If set to False,
-                                  the intersection works as usual: a missing variable means that there
-                                  is no intersection along that dimension, so the whole intersection
-                                  is empty.
-        """
-        # TODO: cache a hash of `_vars` to make this comparison more efficient?
         if not ignore_variables and self.vars() != rhs.vars():
             return Polyhedron([])
 
@@ -645,14 +696,9 @@ class Polyhedron:
 
         C = self._constraints.copy()
         C.update(rhs._constraints)
-        # C = remove_redundant_constraints(C)
-        # if not C:
-        #     # unsat constraints
-        #     return Polyhedron([])
 
         return Polyhedron(
             C,
-            # if we do not ignore variables, then self.vars() == rhs.vars(), so skip the union
             variables=(
                 self.vars().union(rhs.vars()) if ignore_variables else self.vars()
             ),
@@ -660,35 +706,19 @@ class Polyhedron:
         )
 
     def complement(self, timevar=None) -> list:
-        """
-        Return a list of Polyhedra that describe the complement of this polyhedron.
-
-        :param timevar:  if this param is given, each element of the complement is constrained
-                         to its time domain (e.g., assuming that the time bounds are not complemented).
-        """
         return [
             Polyhedron(cc, variables=self.vars(), time_bounds=self._time_bounds)
             for c in self._constraints
             for cc in complement_term(c, timevar, self._time_bounds)
         ]
 
-    # @trace_calls
     def eliminate_ppl(self, elim_vars: list[Var]):
         raise NotImplementedError()
-        poly, variables = self.to_ppl_polyhedron()
-        print(f"Elim {elim_vars} from {poly.constraints()}")
-        print(dir(poly))
-        poly = poly.existentially_quantify(elim_vars)
-        print(f" ==> {poly.constraints()}")
 
-        return Polyhedron.from_ppl_polyhedron(poly, variables)
-
-    # @trace_calls
     def eliminate(self, var: Var, do_simplify=False, restore_eqs=False) -> "Polyhedron":
         """
         Eliminate the variable `var` from this polyhedron.
         We use Fourier-Motzkin elimination for now.
-        Simplify the final polyhedron constraints if `simplify` is set to True.
         """
         if len(self.vars()) == 1:
             raise RuntimeError(
@@ -703,44 +733,38 @@ class Polyhedron:
         # do the Fourier-Motzkin elimination
         lefts, rights = [], []
         solved_for_var = solve_for_variable(to_reduce, var)
-        # [term for ineq in break_eqs(to_reduce) for term in solve(ineq, var).args]
-        # print("S", solved_for_var)
-        if solved_for_var == false:
-            # Inequalities have no solution
+        if solved_for_var is False:
             return Polyhedron([], set())
-        if solved_for_var == true:
-            # Inequalities are universally satisfied
+        if solved_for_var is True:
             return Polyhedron([], self.vars())
 
         for term in break_eqs(solved_for_var):
             # these do not contribute to the result
-            if term.has(Infinity) or term.has(NegativeInfinity):
+            if _is_inf(term):
                 continue
             term = to_le(term)
 
-            if term.lhs.has(var):
-                assert not term.rhs.has(var), term
-                assert term.lhs == var, "Term is not just the symbol"
+            if expr_has(term.lhs, var):
+                assert not expr_has(term.rhs, var), term
+                assert _is_just_var(term.lhs, var), "Term is not just the symbol"
                 rights.append(term)
-            elif term.rhs.has(var):
-                assert term.rhs == var, "Term is not just the symbol"
+            elif expr_has(term.rhs, var):
+                assert _is_just_var(term.rhs, var), "Term is not just the symbol"
                 lefts.append(term)
 
         reduced = []
         if lefts and rights:
             for t_lhs, t_rhs in product(lefts, rights):
-                assert t_lhs.rhs == t_rhs.lhs == var, (var, t_lhs, t_rhs)
+                assert _is_just_var(t_lhs.rhs, var) and _is_just_var(t_rhs.lhs, var), (var, t_lhs, t_rhs)
 
                 if t_lhs.rel_op == "<" or t_rhs.rel_op == "<":
-                    term = t_lhs.lhs < t_rhs.rhs
-                    # term = simplify(t_lhs.lhs < t_rhs.rhs)
+                    term = Lt(t_lhs.lhs, t_rhs.rhs)
                 else:
                     assert t_lhs.rel_op == t_rhs.rel_op == "<=", (t_lhs, t_rhs)
-                    term = t_lhs.lhs <= t_rhs.rhs
-                    # term = simplify(t_lhs.lhs <= t_rhs.rhs)
-                if term == True:
+                    term = Le(t_lhs.lhs, t_rhs.rhs)
+                if term is True or term == True:
                     continue
-                if term == False:
+                if term is False or term == False:
                     return Polyhedron([])
                 reduced.append(term)
 
@@ -758,16 +782,10 @@ class Polyhedron:
         return self._constraints
 
     def to_ppl_polyhedron(self) -> tuple["Polyhedron", list]:
-        """ """
-        # FIXME: return empty PPL poly
         if self.is_empty():
             return None, []
 
-        vars_num = len(self.vars())
-        # fix order of variables and create PPL variables for them
         variables = [(v, ppl.Variable(n)) for n, v in enumerate(self.vars())]
-        # create a mapping for efficient lookup
-        var_map = {v: pplv for v, pplv in variables}
         C = ppl.Constraint_System()
         for c in self._constraints:
             ppl_c = sympy_to_ppl_constraint(c, variables)
@@ -825,13 +843,9 @@ class Polyhedron:
         return Polyhedron(self.substitute_constraints(S), variables)
 
     def __eq__(self, rhs: "Polyhedron") -> bool:
-        # TODO: use __str too? It should work, right?
         return self._vars == rhs._vars and self._constraints == rhs._constraints
 
     def __hash__(self) -> bool:
-        # FIXME
-        # if not self.__str:
-        #    self.__create_str()
         self.__create_str()
         return hash(self.__str)
 
@@ -843,24 +857,47 @@ class Polyhedron:
         else:
             assert self._constraints
             assert self._vars
-            # self.__str = f'{{{", ".join(map(str, self._constraints))}}} over {self._vars} @ {self._time_bounds}'
             self.__str = (
                 f"{{{', '.join(map(str, self._constraints))}}} over {self._vars}"
             )
 
     def __str__(self):
-        # if not self.__str:
-        #    self.__create_str()
-
         self.__create_str()
         return self.__str
 
 
+def _is_inf(term):
+    """Check if a Relation involves infinity."""
+    for side in (term.lhs, term.rhs):
+        if isinstance(side, (int, float)):
+            if side == float("inf") or side == float("-inf"):
+                return True
+        if isinstance(side, Expression) and side.is_constant():
+            v = side.to_float()
+            if v == float("inf") or v == float("-inf"):
+                return True
+    return False
+
+
+def _is_just_var(expr, var):
+    """Check if expr is exactly the given var."""
+    if isinstance(expr, Var):
+        return expr == var
+    if isinstance(expr, Expression):
+        var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
+        return bool(expr == var_sym)
+    return False
+
+
+# Bring Expression into module scope for ppl_constraint_to_sympy
+from symbolica import Expression
+
+
 if __name__ == "__main__":
-    x, y, z = symbols("x y z")
+    x, y, z = Var("x"), Var("y"), Var("z")
 
     P1 = Polyhedron(
-        [x - y <= 1, 2 * x <= 1, 2 * x >= 1, -x <= 3, x + z >= 3, z + y <= x]
+        [Le(x - y, 1), Le(2 * x, 1), Ge(2 * x, 1), Le(-x, 3), Ge(x + z, 3), Le(z + y, x)]
     )
     print("P1:", P1)
     P = P1.eliminate(x)
@@ -869,27 +906,3 @@ if __name__ == "__main__":
     print(P.eliminate(z))
     print("elim y")
     print(P.eliminate(y))
-
-    print("----")
-    P = P1
-    print("P1:", P1)
-    P = P.eliminate(y)
-    print("elim y", P)
-    print("elim z")
-    print(P.eliminate(z))
-    print("elim x")
-    print(P.eliminate(x))
-    print("----")
-    P = P1
-    print("P1:", P1)
-    P = P.eliminate(z)
-    print("elim z", P)
-    print("elim y")
-    print(P.eliminate(y))
-    print("elim x")
-    print(P.eliminate(x))
-    print("----")
-    print("----")
-    P = Polyhedron([x + y <= 1, x - y <= 0, x >= 0, 0 <= y, y <= 1])
-    print(P)
-    print(P.eliminate(y).simplify())

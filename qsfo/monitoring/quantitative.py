@@ -13,24 +13,30 @@ from qsfo.polyhedron import (
     constraints_time_set_fast,
     frac,
 )
-
-# import And as AND, to avoid conflict with qsfo.formula.And
-from sympy import And as AND, Eq
-from sympy.logic.boolalg import BooleanFalse, BooleanTrue
+from qsfo.sym import (
+    Eq,
+    Le,
+    Ge,
+    Lt,
+    Gt,
+    Relation,
+    FiniteSet,
+    expr_has,
+    expr_subs,
+    expr_free_symbols,
+    _to_sym,
+    _is_constant,
+)
 
 # from qsfo.dbg import trace_calls, add_to_trace
 
 def _tri_bool(expr) -> bool | None:
-    """Return True/False if `expr` is a concrete boolean, else None.
-
-    SymPy comparisons sometimes evaluate eagerly to BooleanTrue/BooleanFalse.
-    We must not pass those booleans into the Polyhedron backend.
-    """
+    """Return True/False if `expr` is a concrete boolean, else None."""
 
     if expr is True or expr is False:
         return expr
-    if isinstance(expr, (BooleanTrue, BooleanFalse)):
-        return bool(expr)
+    if isinstance(expr, bool):
+        return expr
     return None
 
 
@@ -95,16 +101,18 @@ def _numeric_sign(expr) -> int | None:
             return -1
         return 0
 
-    # SymPy numbers (Rational, Integer, etc.)
+    # Symbolica numbers
     try:
-        if getattr(expr, "is_number", False):
-            if expr > 0:
+        if _is_constant(expr):
+            from fractions import Fraction
+            from qsfo.sym import FRACTIONS_PREC
+            v = Fraction(expr.to_float()).limit_denominator(FRACTIONS_PREC) if hasattr(expr, 'to_float') else Fraction(expr)
+            if v > 0:
                 return 1
-            if expr < 0:
+            if v < 0:
                 return -1
             return 0
-    except TypeError:
-        # Non-comparable symbolic expression
+    except (TypeError, AttributeError):
         return None
 
     return None
@@ -144,8 +152,8 @@ class RobustnessPolyhedron:
 
     def substitute(self, S):
         expr = self._robustness_expr
-        if hasattr(expr, "subs"):
-            expr = expr.subs(list(S.items()))
+        if hasattr(expr, "replace"):
+            expr = expr_subs(expr, S)
         return RobustnessPolyhedron(expr, self._poly.substitute(S))
 
     def __str__(self) -> str:
@@ -185,14 +193,15 @@ class RobustnessTraceSegment(RobustnessPolyhedron):
 def segment_to_rph(var: str, segment: TraceSegment) -> RobustnessTraceSegment:
     # TODO: we assume that the value of the segment is named `v_{var}`
     var = Var(f"v_{var}")
-    defeq = [c for c in segment.constraints() if isinstance(c, Eq) and c.has(var)]
-    rest = [c for c in segment.constraints() if not (isinstance(c, Eq) and c.has(var))]
+    defeq = [c for c in segment.constraints() if c.rel_op == "==" and c.has(var)]
+    rest = [c for c in segment.constraints() if not (c.rel_op == "==" and c.has(var))]
     assert len(defeq) == 1, defeq
 
     expr = defeq[0]
-    expr = (expr.lhs - expr.rhs).collect(var)
-    coef = expr.coeff(var)
-    robustness = (expr - coef * var) / (-1 * coef)
+    var_sym = _to_sym(var)
+    diff = (expr.lhs - expr.rhs).collect(var_sym)
+    coef = diff.coefficient(var_sym)
+    robustness = (diff - coef * var_sym) / (-1 * coef)
 
     return RobustnessTraceSegment(
         robustness, Polyhedron(rest), segment.timevar(), bounds=segment.bounds()
@@ -340,10 +349,10 @@ class OnlineMonitor:
 
         # Finite case: split along r_l >= r_r.
         pieces: list[RobustnessPolyhedron] = []
-        P1 = _intersect_guard(I, r_l >= r_r, variables=I.vars())
+        P1 = _intersect_guard(I, Ge(r_l, r_r), variables=I.vars())
         if P1 is not None and not P1.is_empty():
             pieces.append(RobustnessPolyhedron(r_l, P1))
-        P2 = _intersect_guard(I, r_l < r_r, variables=I.vars())
+        P2 = _intersect_guard(I, Lt(r_l, r_r), variables=I.vars())
         if P2 is not None and not P2.is_empty():
             pieces.append(RobustnessPolyhedron(r_r, P2))
         return pieces
@@ -362,10 +371,10 @@ class OnlineMonitor:
             return [RobustnessPolyhedron(r_l, I)]
 
         pieces: list[RobustnessPolyhedron] = []
-        P1 = _intersect_guard(I, r_l <= r_r, variables=I.vars())
+        P1 = _intersect_guard(I, Le(r_l, r_r), variables=I.vars())
         if P1 is not None and not P1.is_empty():
             pieces.append(RobustnessPolyhedron(r_l, P1))
-        P2 = _intersect_guard(I, r_l > r_r, variables=I.vars())
+        P2 = _intersect_guard(I, Gt(r_l, r_r), variables=I.vars())
         if P2 is not None and not P2.is_empty():
             pieces.append(RobustnessPolyhedron(r_r, P2))
         return pieces
@@ -442,7 +451,9 @@ class OnlineMonitor:
             else:
                 interval = constraints_time_set_fast(constraints, self.timevar)
                 if interval is None:
-                    interval = AND(*constraints).as_set()
+                    raise RuntimeError(
+                        f"Cannot extract time set from constraints: {constraints}"
+                    )
                 interval_cache[key] = interval
 
             rob = R.robustness()
@@ -601,11 +612,11 @@ class OnlineMonitor:
                         continue
 
                     poly = R.poly()
-                    I_pos = _intersect_guard(poly, r_expr >= 0, variables=poly.vars())
+                    I_pos = _intersect_guard(poly, Ge(r_expr, 0), variables=poly.vars())
                     if I_pos is not None and not I_pos.is_empty():
                         res.append(RobustnessPolyhedron(r_expr, I_pos))
 
-                    I_neg = _intersect_guard(poly, r_expr < 0, variables=poly.vars())
+                    I_neg = _intersect_guard(poly, Lt(r_expr, 0), variables=poly.vars())
                     if I_neg is not None and not I_neg.is_empty():
                         res.append(RobustnessPolyhedron(-r_expr, I_neg))
 
@@ -724,7 +735,7 @@ class OnlineMonitor:
         if robustness_expr in (INFTY, NEG_INFTY):
             return RobustnessPolyhedraList([RobustnessPolyhedron(robustness_expr, P0Y)])
 
-        if not hasattr(robustness_expr, "has") or not robustness_expr.has(x):
+        if not expr_has(robustness_expr, x):
             alpha, beta = 0, robustness_expr
         else:
             alpha, beta = split_coeff(robustness_expr, x)
@@ -745,8 +756,8 @@ class OnlineMonitor:
             G_pos, G_neg, G_zero = None, P0Y, None
         else:
             # Symbolic sign: split the parameter space.
-            G_pos = _intersect_guard(P0Y, alpha > 0, variables=vars_Y)
-            G_neg = _intersect_guard(P0Y, alpha < 0, variables=vars_Y)
+            G_pos = _intersect_guard(P0Y, Gt(alpha, 0), variables=vars_Y)
+            G_neg = _intersect_guard(P0Y, Lt(alpha, 0), variables=vars_Y)
             G_zero = _intersect_guard(P0Y, Eq(alpha, 0), variables=vars_Y)
 
         if G_pos is not None and not G_pos.is_empty():
@@ -755,10 +766,10 @@ class OnlineMonitor:
                 Q.append(RobustnessPolyhedron(INFTY, G_pos))
             else:
                 for u in U:
-                    A_u = _poly_from_guards([(u <= un) for un in U], variables=vars_Y)
+                    A_u = _poly_from_guards([Le(u, un) for un in U], variables=vars_Y)
                     if A_u is None:
                         continue
-                    F_u = _poly_from_guards([(l <= u) for l in L], variables=vars_Y)
+                    F_u = _poly_from_guards([Le(l, u) for l in L], variables=vars_Y)
                     if F_u is None:
                         continue
                     q = G_pos.intersection(A_u).intersection(F_u).reduce()
@@ -771,10 +782,10 @@ class OnlineMonitor:
                 Q.append(RobustnessPolyhedron(INFTY, G_neg))
             else:
                 for l in L:
-                    A_l = _poly_from_guards([(l >= ln) for ln in L], variables=vars_Y)
+                    A_l = _poly_from_guards([Ge(l, ln) for ln in L], variables=vars_Y)
                     if A_l is None:
                         continue
-                    F_l = _poly_from_guards([(l <= u) for u in U], variables=vars_Y)
+                    F_l = _poly_from_guards([Le(l, u) for u in U], variables=vars_Y)
                     if F_l is None:
                         continue
                     q = G_neg.intersection(A_l).intersection(F_l).reduce()
@@ -790,9 +801,10 @@ class OnlineMonitor:
 def split_coeff(expr, x):
     """Rewrite expression `expr` into the form `alpha * x + beta`."""
 
-    expr = expr.collect(x)
-    alpha = expr.coeff(x)
-    beta = expr - alpha * x
+    x_sym = _to_sym(x)
+    expr_c = expr.collect(x_sym)
+    alpha = expr_c.coefficient(x_sym)
+    beta = expr_c - alpha * x_sym
     return alpha, beta
 
 
@@ -806,16 +818,17 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
     """
 
     L, U, P_0 = [], [], []
-    for expr in P.constraints():
-        if not expr.has(x):
-            P_0.append(expr)
+    x_sym = _to_sym(x)
+    for constraint in P.constraints():
+        if not constraint.has(x):
+            P_0.append(constraint)
             continue
 
-        op = expr.rel_op
-        assert op in ("<", "<=", ">", ">=", "=="), expr
-        expr = (expr.lhs - expr.rhs).collect(x)  # expr op 0
-        coeff = expr.coeff(x)
-        rest = expr - coeff * x
+        op = constraint.rel_op
+        assert op in ("<", "<=", ">", ">=", "=="), constraint
+        diff = (constraint.lhs - constraint.rhs).collect(x_sym)  # diff op 0
+        coeff = diff.coefficient(x_sym)
+        rest = diff - coeff * x_sym
         bound = -rest / coeff  # x op' bound (where op' depends on coeff and op)
 
         if op == "==":

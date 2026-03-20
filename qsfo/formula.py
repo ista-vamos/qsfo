@@ -1,5 +1,4 @@
-from sympy import Rational, Abs
-from qsfo.polyhedron import Var
+from qsfo.sym import Var, sym_num
 
 # from ppl import Variable as PPLVariable
 
@@ -202,7 +201,7 @@ class Constant(Term):
         return self._value
 
     def expr(self):
-        return Rational(self._value)
+        return sym_num(self._value)
 
     def __str__(self):
         return str(self.value())
@@ -340,7 +339,8 @@ class ValueOp(ValueTerm):
         if op == "-":
             return ch[0].expr() - ch[1].expr()
         if op == "abs":
-            return Abs(ch[0].expr(), ch[1].expr())
+            e = ch[0].expr()
+            return e.abs() if hasattr(e, 'abs') else abs(e)
         raise NotImplementedError(f"Unknown operation: {op}")
 
     def __str__(self):

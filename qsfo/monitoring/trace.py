@@ -1,6 +1,6 @@
 from lark import Token
 from ..polyhedron import Polyhedron, Var, NO_BOUNDS, Interval, frac
-from sympy import Eq
+from ..sym import Eq, sym_num, Le, Lt, Ge, Gt
 import csv
 
 # from fractions import Fraction
@@ -32,11 +32,11 @@ class TraceSegment(Polyhedron):
         timevar = self._timevar
         if not bounds.is_left_unbounded:
             self._constraints.add(
-                timevar > bounds.start if bounds.left_open else timevar >= bounds.start
+                Gt(timevar, bounds.start) if bounds.left_open else Ge(timevar, bounds.start)
             )
         if not bounds.is_right_unbounded:
             self._constraints.add(
-                timevar < bounds.end if bounds.right_open else timevar <= bounds.end
+                Lt(timevar, bounds.end) if bounds.right_open else Le(timevar, bounds.end)
             )
         if bounds != NO_BOUNDS:
             self._vars.add(timevar)
@@ -52,11 +52,11 @@ class TraceSegment(Polyhedron):
         timevar = self._timevar
         if not bounds.is_left_unbounded:
             C.append(
-                timevar > bounds.start if bounds.left_open else timevar >= bounds.start
+                Gt(timevar, bounds.start) if bounds.left_open else Ge(timevar, bounds.start)
             )
         if not bounds.is_right_unbounded:
             C.append(
-                timevar < bounds.end if bounds.right_open else timevar <= bounds.end
+                Lt(timevar, bounds.end) if bounds.right_open else Le(timevar, bounds.end)
             )
 
         return Polyhedron(C, set((self.timevar(),)), self._time_bounds)
@@ -205,14 +205,11 @@ class SignalsTrace(list):
             cur = self[i]
             a = frac(cur[varname] - last[varname]) / frac(cur[t] - last[t])
             b = frac(last[varname]) - a * frac(last[t])
-            # a = (cur[varname] - last[varname]) / (cur[t] - last[t])
-            # b = (last[varname]) - a * (last[t])
-            line = a * timevar + b
+            line = sym_num(a) * timevar + sym_num(b)
             sig.append(
                 TraceSegment(
                     timevar,
                     constraints=[Eq(line - resvar, 0)],
-                    # bounds=Interval(last[t], cur[t], ropen=True),
                     bounds=Interval(frac(last[t]), frac(cur[t]), ropen=True),
                 ).connstraint_by_time_bounds()
             )

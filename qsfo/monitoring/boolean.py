@@ -2,7 +2,7 @@ from qsfo.polyhedron import Var, Polyhedron, Interval
 from qsfo.monitoring.polyhedralist import FormulaPolyhedraList
 from qsfo.formula import *
 
-from sympy import Eq
+from qsfo.sym import Eq
 
 
 class Formula2Polyhedra:
