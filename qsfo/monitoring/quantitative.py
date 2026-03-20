@@ -24,6 +24,9 @@ from qsfo.sym import (
     expr_has,
     expr_subs,
     expr_free_symbols,
+    expr_collect,
+    expr_coefficient,
+    expr_to_comparable,
     _to_sym,
     _is_constant,
 )
@@ -101,19 +104,14 @@ def _numeric_sign(expr) -> int | None:
             return -1
         return 0
 
-    # Symbolica numbers
-    try:
-        if _is_constant(expr):
-            from fractions import Fraction
-            from qsfo.sym import FRACTIONS_PREC
-            v = Fraction(expr.to_float()).limit_denominator(FRACTIONS_PREC) if hasattr(expr, 'to_float') else Fraction(expr)
-            if v > 0:
-                return 1
-            if v < 0:
-                return -1
-            return 0
-    except (TypeError, AttributeError):
-        return None
+    # Symbolic expressions that are provably constant
+    v = expr_to_comparable(expr)
+    if v is not None:
+        if v > 0:
+            return 1
+        if v < 0:
+            return -1
+        return 0
 
     return None
 
@@ -199,8 +197,8 @@ def segment_to_rph(var: str, segment: TraceSegment) -> RobustnessTraceSegment:
 
     expr = defeq[0]
     var_sym = _to_sym(var)
-    diff = (expr.lhs - expr.rhs).collect(var_sym)
-    coef = diff.coefficient(var_sym)
+    diff = expr_collect(expr.lhs - expr.rhs, var)
+    coef = expr_coefficient(diff, var)
     robustness = (diff - coef * var_sym) / (-1 * coef)
 
     return RobustnessTraceSegment(
@@ -802,8 +800,8 @@ def split_coeff(expr, x):
     """Rewrite expression `expr` into the form `alpha * x + beta`."""
 
     x_sym = _to_sym(x)
-    expr_c = expr.collect(x_sym)
-    alpha = expr_c.coefficient(x_sym)
+    expr_c = expr_collect(expr, x)
+    alpha = expr_coefficient(expr_c, x)
     beta = expr_c - alpha * x_sym
     return alpha, beta
 
@@ -826,8 +824,8 @@ def isolate_bounds(P, x) -> tuple[list, list, Polyhedron]:
 
         op = constraint.rel_op
         assert op in ("<", "<=", ">", ">=", "=="), constraint
-        diff = (constraint.lhs - constraint.rhs).collect(x_sym)  # diff op 0
-        coeff = diff.coefficient(x_sym)
+        diff = expr_collect(constraint.lhs - constraint.rhs, x)  # diff op 0
+        coeff = expr_coefficient(diff, x)
         rest = diff - coeff * x_sym
         bound = -rest / coeff  # x op' bound (where op' depends on coeff and op)
 

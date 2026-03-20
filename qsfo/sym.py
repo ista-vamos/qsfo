@@ -121,6 +121,71 @@ def expr_free_symbols(expr) -> set:
     return {Var(_sym_name(s)) for s in expr.get_all_indeterminates()}
 
 
+def expr_collect(expr, var):
+    """Collect terms with respect to *var*, return a new expression."""
+    return _to_sym(expr).collect(_to_sym(var))
+
+
+def expr_coefficient(expr, var):
+    """Return the coefficient of *var* in *expr*."""
+    return _to_sym(expr).coefficient(_to_sym(var))
+
+
+def expr_replace(expr, old, new):
+    """Substitute *old* with *new* in *expr*."""
+    return _to_sym(expr).replace(_to_sym(old), _to_sym(new))
+
+
+def expr_is_symbol(expr) -> bool:
+    """Check if *expr* is a single symbolic variable."""
+    if isinstance(expr, Var):
+        return True
+    if isinstance(expr, Expression):
+        return expr.get_type() == AtomType.Var
+    return False
+
+
+def expr_to_var(expr) -> "Var":
+    """Convert a single-symbol expression to a Var."""
+    if isinstance(expr, Var):
+        return expr
+    if isinstance(expr, Expression):
+        return Var(_sym_name(expr))
+    raise TypeError(f"Cannot convert {type(expr)} to Var")
+
+
+def expr_to_comparable(val):
+    """Convert *val* to a Python Fraction/int/float for numeric comparison.
+
+    Returns None if *val* is symbolic (not a constant).
+    """
+    if isinstance(val, (int, float, Fraction)):
+        return val
+    if isinstance(val, Var):
+        return None
+    if isinstance(val, Expression):
+        if val.is_constant():
+            try:
+                return Fraction(val.to_int())
+            except Exception:
+                return Fraction(float(str(val.to_float()))).limit_denominator(FRACTIONS_PREC)
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def expr_is_inf(expr) -> bool:
+    """Check whether *expr* is ±infinity."""
+    if isinstance(expr, (int, float)):
+        return expr == float("inf") or expr == float("-inf")
+    if isinstance(expr, Expression) and expr.is_constant():
+        v = float(str(expr.to_float()))
+        return v == float("inf") or v == float("-inf")
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Var
 # ---------------------------------------------------------------------------

@@ -20,6 +20,13 @@ from qsfo.sym import (
     expr_has,
     expr_subs,
     expr_free_symbols,
+    expr_collect,
+    expr_coefficient,
+    expr_replace,
+    expr_is_symbol,
+    expr_to_var,
+    expr_to_comparable,
+    expr_is_inf,
     _is_constant,
     _make_rel,
 )
@@ -112,23 +119,8 @@ def _get_bounds(term) -> Interval:
     return None, None
 
 
-def _is_sym(expr) -> bool:
-    """Check if expression is a single symbol."""
-    if isinstance(expr, Var):
-        return True
-    from symbolica import AtomType
-    if isinstance(expr, Expression):
-        return expr.get_type() == AtomType.Var
-    return False
-
-
-def _to_var(expr) -> Var:
-    """Convert a single-symbol expression to a Var."""
-    if isinstance(expr, Var):
-        return expr
-    if isinstance(expr, Expression):
-        return Var(str(expr.get_name()))
-    raise TypeError(f"Cannot convert {type(expr)} to Var")
+_is_sym = expr_is_symbol
+_to_var = expr_to_var
 
 
 def _cmp_numbers(lhs, rhs) -> int | None:
@@ -155,23 +147,7 @@ def _cmp_numbers(lhs, rhs) -> int | None:
     return None
 
 
-def _to_comparable(val):
-    """Convert a value to something Python can compare (Fraction/int/float)."""
-    if isinstance(val, (int, float, Fraction)):
-        return val
-    if isinstance(val, Var):
-        return None
-    if isinstance(val, Expression):
-        if val.is_constant():
-            try:
-                return Fraction(val.to_int())
-            except Exception:
-                return Fraction(float(str(val.to_float()))).limit_denominator(FRACTIONS_PREC)
-        return None
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
+_to_comparable = expr_to_comparable
 
 
 def _tighten_lower(current, candidate):
@@ -218,13 +194,13 @@ def _extract_linear_bound(term, var):
     if op not in ("<", "<=", ">", ">=", "=="):
         return None
 
-    var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
     diff = term.lhs - term.rhs
-    expr = diff.collect(var_sym)
-    coeff = expr.coefficient(var_sym)
+    expr = expr_collect(diff, var)
+    coeff = expr_coefficient(expr, var)
     if _is_constant(coeff) and _to_comparable(coeff) == 0:
         return None
 
+    var_sym = _to_sym(var)
     rest = expr - coeff * var_sym
     if not _is_constant(rest):
         return None
@@ -393,19 +369,16 @@ def coef_with_denom(c: Fraction, denom):
 
 
 def _expr_coefficients_dict(expr, variables):
-    """Extract coefficients from a Symbolica expression for the given variables.
+    """Extract coefficients from an expression for the given variables.
 
     Returns a dict mapping each variable (as a Var) to its Fraction coefficient,
     plus a special key 1 for the constant term.
     """
-    from symbolica import Expression as Expr
-
     expr_sym = _to_sym(expr)
     result = {}
 
     for var, _ in variables:
-        var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
-        c = expr_sym.coefficient(var_sym)
+        c = expr_coefficient(expr_sym, var)
         if _is_constant(c):
             cv = _to_comparable(c)
             if cv != 0:
@@ -414,8 +387,7 @@ def _expr_coefficients_dict(expr, variables):
     # Constant term: substitute all variables with 0
     const_expr = expr_sym
     for var, _ in variables:
-        var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
-        const_expr = const_expr.replace(var_sym, Expression.num(0))
+        const_expr = expr_replace(const_expr, var, 0)
 
     if _is_constant(const_expr):
         cv = _to_comparable(const_expr)
@@ -516,14 +488,14 @@ def solve_for_variable(to_reduce, var) -> list:
     if not to_reduce:
         return []
 
-    var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
+    var_sym = _to_sym(var)
     results = []
 
     for term in to_reduce:
         op = term.rel_op
         diff = term.lhs - term.rhs
-        expr = diff.collect(var_sym)
-        coeff = expr.coefficient(var_sym)
+        expr = expr_collect(diff, var)
+        coeff = expr_coefficient(expr, var)
 
         coeff_val = _to_comparable(coeff)
         if coeff_val is None or coeff_val == 0:
@@ -868,29 +840,18 @@ class Polyhedron:
 
 def _is_inf(term):
     """Check if a Relation involves infinity."""
-    for side in (term.lhs, term.rhs):
-        if isinstance(side, (int, float)):
-            if side == float("inf") or side == float("-inf"):
-                return True
-        if isinstance(side, Expression) and side.is_constant():
-            v = side.to_float()
-            if v == float("inf") or v == float("-inf"):
-                return True
-    return False
+    return expr_is_inf(term.lhs) or expr_is_inf(term.rhs)
 
 
 def _is_just_var(expr, var):
     """Check if expr is exactly the given var."""
     if isinstance(expr, Var):
         return expr == var
-    if isinstance(expr, Expression):
-        var_sym = var._expr if isinstance(var, Var) else _to_sym(var)
-        return bool(expr == var_sym)
-    return False
-
-
-# Bring Expression into module scope for ppl_constraint_to_sympy
-from symbolica import Expression
+    var_sym = _to_sym(var)
+    try:
+        return bool(_to_sym(expr) == var_sym)
+    except TypeError:
+        return False
 
 
 if __name__ == "__main__":
