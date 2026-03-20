@@ -19,19 +19,16 @@ from qsfo.sym import (
     Ge,
     Lt,
     Gt,
-    Relation,
-    FiniteSet,
     expr_has,
     expr_subs,
-    expr_free_symbols,
     expr_collect,
     expr_coefficient,
     expr_to_comparable,
     _to_sym,
-    _is_constant,
 )
 
 # from qsfo.dbg import trace_calls, add_to_trace
+
 
 def _tri_bool(expr) -> bool | None:
     """Return True/False if `expr` is a concrete boolean, else None."""
@@ -188,9 +185,9 @@ class RobustnessTraceSegment(RobustnessPolyhedron):
         return self._timevar
 
 
-def segment_to_rph(var: str, segment: TraceSegment) -> RobustnessTraceSegment:
+def segment_to_rph(var_name: str, segment: TraceSegment) -> RobustnessTraceSegment:
     # TODO: we assume that the value of the segment is named `v_{var}`
-    var = Var(f"v_{var}")
+    var = Var(f"v_{var_name}")
     defeq = [c for c in segment.constraints() if c.rel_op == "==" and c.has(var)]
     rest = [c for c in segment.constraints() if not (c.rel_op == "==" and c.has(var))]
     assert len(defeq) == 1, defeq
@@ -253,7 +250,8 @@ class OnlineMonitor:
             v = Var(name)
             self._vars[name] = v
         return v
-    def _fresh_variable(self, name: str = None) -> Var:
+
+    def _fresh_variable(self, name: None | str = None) -> Var:
         """Return a fresh anonymous variable, or a stable named variable."""
 
         if name is not None:
@@ -294,7 +292,7 @@ class OnlineMonitor:
 
     def update(
         self, segment: dict, time_interval: Polyhedron, stats: bool = False
-    ) -> RobustnessPolyhedraList:
+    ) -> RobustnessPolyhedraList | tuple[RobustnessPolyhedraList, float, float]:
         """
         :param: segment - new segment (w_i in the paper), it is a dict that maps
                           signals names to polyhdera. These polyhedra already contain
@@ -304,6 +302,7 @@ class OnlineMonitor:
         self.update_signal(segment)
 
         # compute current contstraints on variables
+        assert self._P_dom
         P_seg = self._P_dom.intersection(time_interval)
 
         # compute the monitoring signal
@@ -575,7 +574,10 @@ class OnlineMonitor:
                     else:
                         lhs: RobustnessPolyhedraList = self.term(children[1], P_seg)
                         return RobustnessPolyhedraList(
-                            (RobustnessPolyhedron(-ph.robustness(), ph.poly()) for ph in lhs)
+                            (
+                                RobustnessPolyhedron(-ph.robustness(), ph.poly())
+                                for ph in lhs
+                            )
                         )
 
                 elif isinstance(children[1], Constant) and children[1].value() == 0:
@@ -589,7 +591,9 @@ class OnlineMonitor:
                     poly = lhs.poly().intersection(rhs.poly()).reduce()
                     if poly.is_empty():
                         continue
-                    res.append(RobustnessPolyhedron(robustness_poly_op(op, lhs, rhs), poly))
+                    res.append(
+                        RobustnessPolyhedron(robustness_poly_op(op, lhs, rhs), poly)
+                    )
 
                 return RobustnessPolyhedraList(res)
 
@@ -624,7 +628,9 @@ class OnlineMonitor:
                 assert len(formula.children()) == 2, formula
                 children = formula.children()
 
-                assert isinstance(children[0], Constant) or isinstance(children[1], Constant)
+                assert isinstance(children[0], Constant) or isinstance(
+                    children[1], Constant
+                )
 
                 # We must still evaluate the non-constant side to preserve well-definedness
                 # (signal accesses in the term still have to be defined), but we can
@@ -636,11 +642,17 @@ class OnlineMonitor:
                         return rhs_terms
                     if c == -1:
                         return RobustnessPolyhedraList(
-                            (RobustnessPolyhedron(-ph.robustness(), ph.poly()) for ph in rhs_terms)
+                            (
+                                RobustnessPolyhedron(-ph.robustness(), ph.poly())
+                                for ph in rhs_terms
+                            )
                         )
                     if c == 0:
                         return RobustnessPolyhedraList(
-                            (RobustnessPolyhedron(frac(0), ph.poly()) for ph in rhs_terms)
+                            (
+                                RobustnessPolyhedron(frac(0), ph.poly())
+                                for ph in rhs_terms
+                            )
                         )
 
                 if isinstance(children[1], Constant):
@@ -650,11 +662,17 @@ class OnlineMonitor:
                         return lhs_terms
                     if c == -1:
                         return RobustnessPolyhedraList(
-                            (RobustnessPolyhedron(-ph.robustness(), ph.poly()) for ph in lhs_terms)
+                            (
+                                RobustnessPolyhedron(-ph.robustness(), ph.poly())
+                                for ph in lhs_terms
+                            )
                         )
                     if c == 0:
                         return RobustnessPolyhedraList(
-                            (RobustnessPolyhedron(frac(0), ph.poly()) for ph in lhs_terms)
+                            (
+                                RobustnessPolyhedron(frac(0), ph.poly())
+                                for ph in lhs_terms
+                            )
                         )
 
                 rpl_0: RobustnessPolyhedraList = self.term(children[0], P_seg)
@@ -665,7 +683,9 @@ class OnlineMonitor:
                     poly = lhs.poly().intersection(rhs.poly()).reduce()
                     if poly.is_empty():
                         continue
-                    res.append(RobustnessPolyhedron(robustness_poly_op(op, lhs, rhs), poly))
+                    res.append(
+                        RobustnessPolyhedron(robustness_poly_op(op, lhs, rhs), poly)
+                    )
                 return RobustnessPolyhedraList(res)
 
             raise NotImplementedError(f"Operation not implemented: {formula}")
